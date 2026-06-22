@@ -12,40 +12,43 @@ Pour chaque littéral $\ell_i$ ($i \in \{1, 2, 3\}$) associé à la variable $x_
 * Si $\ell_i = x_i$, alors $L_i = s_i s_T = s_i$.
 * Si $\ell_i = \neg x_i$, alors $L_i = -s_i s_T = -s_i$.
 
-L'énergie de la clause $C$ est donnée par :
-* $U_C(\sigma) = w > 0$ si la clause est **insatisfaite** ($L_1 = L_2 = L_3 = -1$).
-* $U_C(\sigma) = 0$ si la clause est **satisfaite** (au moins un littéral est à $+1$).
+L'énergie globale du système est définie par :
+$$U(\sigma) = u \sum_{C} \mathbb{I}(C \text{ est insatisfaite})$$
+où $u > 0$ est le poids d'une clause insatisfaite. Pour chaque clause $C$ :
+* $\mathbb{I}(C \text{ est insatisfaite}) = 1$ si $L_1 = L_2 = L_3 = -1$.
+* $\mathbb{I}(C \text{ est insatisfaite}) = 0$ sinon (au moins un littéral est à $+1$).
 
 ---
 
-## 2. Décomposition de l'Énergie sur le Tétraèdre $\{1, 2, 3, T\}$
+## 2. Décomposition de l'Énergie et Interprétation Géométrique
 
-Comme présenté dans la thèse, l'énergie d'une clause peut être développée sous forme polynomiale en les variables $L_i$ (qui représentent les valeurs des littéraux dans la configuration $\sigma$) :
-$$\mathbb{I}(L_1 = L_2 = L_3 = -1) = \left(\frac{1-L_1}{2}\right)\left(\frac{1-L_2}{2}\right)\left(\frac{1-L_3}{2}\right)$$
-$$U_C(\sigma) = \frac{w}{8} \left( 1 - (L_1 + L_2 + L_3) + (L_1 L_2 + L_2 L_3 + L_3 L_1) - L_1 L_2 L_3 \right)$$
+Cette énergie se décompose géométriquement en associant à chaque clause deux structures distinctes sur le tétraèdre $\{1, 2, 3, T\}$ (avec $s_T = +1$) :
 
-Cette décomposition correspond à distribuer l'énergie sur les interactions du tétraèdre $\{1, 2, 3, T\}$ (avec $T$ fixé à $+1$). En définissant la constante de couplage locale $u = w/4$, l'énergie totale d'une clause $U_C(\sigma)$ s'exprime comme la somme des énergies de ses 6 arêtes et de son interaction à 4 corps :
+1. **Le triangle contradictoire (base $\{1, 2, 3\}$) :**
+   * Ses 3 arêtes ont un signe **opposé** au produit des littéraux ($S_{ab} = -v_a v_b$).
+   * Ce triangle est frustré (la parité de ses arêtes négatives est impaire) et ne peut avoir au plus que 2 arêtes satisfaites.
+   * Il est dit **satisfait** si 2 arêtes sur 3 sont satisfaites (ce qui se produit si les $L_i$ ne sont pas tous égaux).
+   * Il est dit **non satisfait** si ses 3 arêtes sont non satisfaites (ce qui se produit si et seulement si $L_1 = L_2 = L_3$). Soit $I_{\text{triangle\_unsat}}$ son indicatrice.
 
-$$U_C(\sigma) = \sum_{\{a,b\} \subseteq \{1,2,3\}} U_{ab}(s_a, s_b) + \sum_{a=1}^3 U_{aT}(s_a, s_T) + U_{\text{tetra}}(s_1, s_2, s_3, s_T) - \frac{w}{8}$$
+2. **Le tétraèdre conforme $\{1, 2, 3, T\}$ :**
+   * Ses 6 arêtes ont des signes en **accord** avec les littéraux ($S_{aT} = v_a$ et $S_{ab} = +v_a v_b$).
+   * Ce tétraèdre n'est pas frustré et peut être pleinement satisfait.
+   * Il est dit **satisfait** si ses 6 arêtes sont satisfaites (ce qui se produit si et seulement si $L_1 = L_2 = L_3 = +1$).
+   * Il est dit **non satisfait** si au moins une de ses 6 arêtes n'est pas satisfaite. Soit $I_{\text{tet\_unsat}}$ son indicatrice.
 
-où chaque type de liaison respecte les formules suivantes :
+### Caractérisation de la Clause
+Si la clause $C$ est satisfaite, alors :
+* Soit le triangle contradictoire de base est satisfait (2/3 arêtes satisfaites).
+* Soit le tétraèdre conforme est satisfait (toutes ses arêtes satisfaites).
 
-1. **Le triangle de base $\{1, 2, 3\}$** : Composé de 3 arêtes signées ayant un signe opposé au produit des littéraux ($S_{ab} = -v_a v_b$). L'énergie de chaque arête vaut :
-   $$U_{ab}(s_a, s_b) = \frac{u}{2}(1 + L_a L_b) = \frac{w}{8}(1 + v_a v_b s_a s_b)$$
-2. **Les liaisons latérales reliant les littéraux à $T$** : Composées de 3 arêtes ayant un signe en accord avec le littéral ($S_{aT} = v_a$). L'énergie de chaque liaison vaut :
-   $$U_{aT}(s_a, s_T) = \frac{u}{2}(1 - L_a) = \frac{w}{8}(1 - v_a s_a s_T)$$
-3. **Le tétraèdre (interaction d'ordre 4 sur les 4 nœuds)** : L'énergie associée à l'interaction globale du tétraèdre vaut :
-   $$U_{\text{tetra}}(s_1, s_2, s_3, s_T) = -\frac{u}{2} L_1 L_2 L_3 = -\frac{w}{8} v_1 v_2 v_3 s_1 s_2 s_3 s_T$$
+Si la clause $C$ est insatisfaite ($L_1 = L_2 = L_3 = -1$), ni le triangle contradictoire ni le tétraèdre conforme ne sont satisfaits.
 
-### Calcul de l'Énergie Totale
-* Si la configuration est **satisfaite** (au moins un $L_i = +1$), la somme des énergies vaut :
-  $$U_C(\sigma) = -\frac{w}{8} - \frac{w}{8} = -\frac{w}{4}$$
-  *(soit $0$ après translation de la constante).*
-* Si la configuration est **insatisfaite** ($L_1 = L_2 = L_3 = -1$), la somme des énergies vaut :
-  $$U_C(\sigma) = \frac{7w}{8} - \frac{w}{8} = \frac{3w}{4}$$
-  *(soit $w$ après la même translation).*
+### Équivalence Énergétique
+Pour chaque clause, on a la relation d'indicateurs suivante :
+$$\mathbb{I}(C \text{ est insatisfaite}) = I_{\text{triangle\_unsat}} + I_{\text{tet\_unsat}} - 1$$
 
-La différence d'énergie entre les états satisfait et insatisfait est donc exactement de $w$, ce qui encode parfaitement la contrainte de la clause 3-SAT.
+Par conséquent, l'énergie globale du système $U(\sigma)$ est égale, à une constante additive près (égale à $-u$ fois le nombre de clauses), à :
+$$U(\sigma) = u \sum_{C} I_{\text{triangle\_unsat}}(C) + u \sum_{C} I_{\text{tet\_unsat}}(C)$$
 
 ---
 
@@ -64,9 +67,9 @@ Soit $\omega_b$ le sous-graphe gelé sur le tétraèdre $b$.
   > Les clauses satisfaites ne gèlent **strictement rien** (probabilité $1$ d'avoir $\emptyset$). Cela laisse le maximum de liberté au système pour explorer l'espace des configurations.
   
 * Si la clause $C$ est **insatisfaite** ($\sigma = \text{Unsat}$) :
-  $$P_b^{\text{Unsat}}(\emptyset) = e^{-w}$$
-  $$P_b^{\text{Unsat}}(\omega_{all}) = 1 - e^{-w}$$
-  Les clauses insatisfaites gèlent le tétraèdre entier avec probabilité $1 - e^{-w}$ pour forcer le système à s'ajuster lors du recoloriage.
+  $$P_b^{\text{Unsat}}(\emptyset) = e^{-u}$$
+  $$P_b^{\text{Unsat}}(\omega_{all}) = 1 - e^{-u}$$
+  Les clauses insatisfaites gèlent le tétraèdre entier avec probabilité $1 - e^{-u}$ pour forcer le système à s'ajuster lors du recoloriage.
 
 ---
 
@@ -74,23 +77,23 @@ Soit $\omega_b$ le sous-graphe gelé sur le tétraèdre $b$.
 
 Pour garantir que cette dynamique laisse la mesure de Gibbs invariante, on vérifie la condition de balance détaillée.
 
-La mesure de Gibbs locale est $\mu(\sigma) \propto e^{-U_b(\sigma)}$.
+La mesure de Gibbs locale pour une clause est $\mu(\sigma) \propto e^{-U_C(\sigma)}$ où $U_C(\sigma) = u \mathbb{I}(C \text{ est insatisfaite})$.
 Soit le couplage d'Edwards-Sokal sur l'espace joint $(\sigma, \omega_b)$. La condition de réversibilité locale s'écrit :
-$$e^{-U_b(\sigma)} P_b^\sigma(\omega_b) = e^{-U_b(\sigma')} P_b^{\sigma'}(\omega_b)$$
+$$e^{-U_C(\sigma)} P_b^\sigma(\omega_b) = e^{-U_C(\sigma')} P_b^{\sigma'}(\omega_b)$$
 pour toutes les configurations $\sigma, \sigma'$ compatibles avec le sous-graphe gelé $\omega_b$.
 
 ### Vérification :
 1. **Pour $\omega_b = \emptyset$ :**
    Toutes les configurations sont compatibles avec le graphe vide.
-   * Pour $\sigma \in \text{Sat}$ ($U_b(\sigma) = 0$) :
+   * Pour $\sigma \in \text{Sat}$ ($U_C(\sigma) = 0$) :
      $$e^{-0} P_b^{\text{Sat}}(\emptyset) = 1 \cdot 1 = 1$$
-   * Pour $\sigma = \text{Unsat}$ ($U_b(\sigma) = w$) :
-     $$e^{-w} P_b^{\text{Unsat}}(\emptyset) = e^{-w} \cdot e^w = 1$$
+   * Pour $\sigma = \text{Unsat}$ ($U_C(\sigma) = u$) :
+     $$e^{-u} P_b^{\text{Unsat}}(\emptyset) = e^{-u} \cdot e^u = 1$$
    La condition est parfaitement respectée : $1 = 1$.
 
 2. **Pour $\omega_b = \omega_{all}$ :**
    La seule configuration compatible avec $\omega_{all}$ est $\text{Unsat}$ (car toutes les variables littérales sont connectées à $T$ qui a pour valeur $+1$, imposant $L_i = -1$).
-   * Puisqu'il n'y a qu'une seule configuration compatible, la relation de balance détaillée pour cet état s'applique trivialement sans contrainte d'égalité avec un autre état.
+   * Puisqu'il n'y a qu'une seule configuration compatible, la relation de balance détaillée pour cet état s'applique de façon triviale.
    * Pour tout $\sigma' \in \text{Sat}$, la compatibilité est nulle, donc $P_b^{\sigma'}(\omega_{all}) = 0$.
 
 La dynamique est donc **mathématiquement rigoureuse et réversible** par rapport à la distribution de Gibbs de la postérieure.
@@ -103,11 +106,11 @@ Un pas complet de la dynamique s'effectue comme suit :
 
 1. **Phase de Gel :**
    * Pour chaque clause $C$ satisfaite, ne geler aucune arête du tétraèdre associé.
-   * Pour chaque clause $C$ insatisfaite, geler le tétraèdre complet $\omega_{all}$ avec probabilité $1-e^{-w}$.
+   * Pour chaque clause $C$ insatisfaite, geler le tétraèdre complet $\omega_{all}$ avec probabilité $1-e^{-u}$.
 2. **Phase de Partition :**
    * Identifier les composantes connexes du graphe formé par les arêtes gelées.
    * La composante contenant le nœud $T$ a ses spins gelés (sa configuration est inchangée).
 3. **Phase de Recoloriage :**
    * Pour chaque composante connexe $C'$ ne contenant pas le nœud $T$, tirer un nouveau spin $s_{C'} \in \{-1, +1\}$ selon la loi de Gibbs réduite :
-     $$W_{global}(\sigma) \propto \prod_{C \text{ t.q. } \omega_{b_C} = \emptyset} \left( \mathbb{I}(C \text{ satisfaite}) + e^{-2w} \mathbb{I}(C \text{ insatisfaite}) \right)$$
-     (Puisque $w \gg 0$, $e^{-2w} \approx 0$, ce qui incite fortement le recoloriage à satisfaire les clauses libres).
+     $$W_{global}(\sigma) \propto \prod_{C \text{ t.q. } \omega_{b_C} = \emptyset} \left( \mathbb{I}(C \text{ satisfaite}) + e^{-2u} \mathbb{I}(C \text{ insatisfaite}) \right)$$
+     (Puisque $u \gg 0$, $e^{-2u} \approx 0$, ce qui incite fortement le recoloriage à satisfaire les clauses libres).
