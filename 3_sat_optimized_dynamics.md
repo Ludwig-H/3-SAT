@@ -20,14 +20,32 @@ L'énergie de la clause $C$ est donnée par :
 
 ## 2. Décomposition de l'Énergie sur le Tétraèdre $\{1, 2, 3, T\}$
 
-Comme présenté dans la thèse, l'énergie d'une clause peut être développée sous forme polynomiale en les variables $L_i$ :
+Comme présenté dans la thèse, l'énergie d'une clause peut être développée sous forme polynomiale en les variables $L_i$ (qui représentent les valeurs des littéraux dans la configuration $\sigma$) :
 $$\mathbb{I}(L_1 = L_2 = L_3 = -1) = \left(\frac{1-L_1}{2}\right)\left(\frac{1-L_2}{2}\right)\left(\frac{1-L_3}{2}\right)$$
 $$U_C(\sigma) = \frac{w}{8} \left( 1 - (L_1 + L_2 + L_3) + (L_1 L_2 + L_2 L_3 + L_3 L_1) - L_1 L_2 L_3 \right)$$
 
-Cette décomposition montre que l'énergie se répartit sur les éléments du tétraèdre $\{1, 2, 3, T\}$ :
-1. **Liaisons de base (arêtes du triangle $\{1, 2, 3\}$) :** Termes $+ \frac{w}{8} L_i L_j$. Ces interactions ont un signe opposé au produit des deux littéraux.
-2. **Liaisons latérales (champs locaux reliés à $T$) :** Termes $- \frac{w}{8} L_i$. Les signes de ces arêtes sont conformes aux littéraux.
-3. **Interaction d'ordre 4 (tétraèdre entier) :** Terme $- \frac{w}{8} L_1 L_2 L_3$.
+Cette décomposition correspond à distribuer l'énergie sur les interactions du tétraèdre $\{1, 2, 3, T\}$ (avec $T$ fixé à $+1$). En définissant la constante de couplage locale $u = w/4$, l'énergie totale d'une clause $U_C(\sigma)$ s'exprime comme la somme des énergies de ses 6 arêtes et de son interaction à 4 corps :
+
+$$U_C(\sigma) = \sum_{\{a,b\} \subseteq \{1,2,3\}} U_{ab}(s_a, s_b) + \sum_{a=1}^3 U_{aT}(s_a, s_T) + U_{\text{tetra}}(s_1, s_2, s_3, s_T) - \frac{w}{8}$$
+
+où chaque type de liaison respecte les formules suivantes :
+
+1. **Le triangle de base $\{1, 2, 3\}$** : Composé de 3 arêtes signées ayant un signe opposé au produit des littéraux ($S_{ab} = -v_a v_b$). L'énergie de chaque arête vaut :
+   $$U_{ab}(s_a, s_b) = \frac{u}{2}(1 + L_a L_b) = \frac{w}{8}(1 + v_a v_b s_a s_b)$$
+2. **Les liaisons latérales reliant les littéraux à $T$** : Composées de 3 arêtes ayant un signe en accord avec le littéral ($S_{aT} = v_a$). L'énergie de chaque liaison vaut :
+   $$U_{aT}(s_a, s_T) = \frac{u}{2}(1 - L_a) = \frac{w}{8}(1 - v_a s_a s_T)$$
+3. **Le tétraèdre (interaction d'ordre 4 sur les 4 nœuds)** : L'énergie associée à l'interaction globale du tétraèdre vaut :
+   $$U_{\text{tetra}}(s_1, s_2, s_3, s_T) = -\frac{u}{2} L_1 L_2 L_3 = -\frac{w}{8} v_1 v_2 v_3 s_1 s_2 s_3 s_T$$
+
+### Calcul de l'Énergie Totale
+* Si la configuration est **satisfaite** (au moins un $L_i = +1$), la somme des énergies vaut :
+  $$U_C(\sigma) = -\frac{w}{8} - \frac{w}{8} = -\frac{w}{4}$$
+  *(soit $0$ après translation de la constante).*
+* Si la configuration est **insatisfaite** ($L_1 = L_2 = L_3 = -1$), la somme des énergies vaut :
+  $$U_C(\sigma) = \frac{7w}{8} - \frac{w}{8} = \frac{3w}{4}$$
+  *(soit $w$ après la même translation).*
+
+La différence d'énergie entre les états satisfait et insatisfait est donc exactement de $w$, ce qui encode parfaitement la contrainte de la clause 3-SAT.
 
 ---
 
