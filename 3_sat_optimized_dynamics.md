@@ -1,244 +1,131 @@
-# Dynamique de Clusters Optimisée pour le Problème 3-SAT sur Graphes Signés
+# Dynamique de Clusters Optimisée pour le Problème SAT Réel sur Graphes Signés
 
-Ce document présente une formulation mathématique rigoureuse et précise d'un algorithme de résolution du problème 3-SAT. Cet algorithme repose sur un double transfert d'énergie, une dynamique de Markov hybride combinant un gel de type Swendsen-Wang (sur la partie isotrope) et des acceptations de type Metropolis-Hastings (sur la partie orientée), suivie d'une phase de clustering spectral sur la matrice de corrélation spin-spin empirique.
-
----
-
-## 1. Modélisation Énergétique d'une Clause 3-SAT
-
-Soit une formule 3-SAT contenant $`N`$ variables $`x_1, \dots, x_N`$ et un ensemble de clauses $`\mathcal{C}`$. Chaque clause $`C \in \mathcal{C}`$ porte sur trois littéraux :
-
-```math
-C = \ell_{C,1} \lor \ell_{C,2} \lor \ell_{C,3}
-```
-
-où chaque littéral $`\ell_{C,k}`$ correspond à une variable sous-jacente $`x_{i_k}`$ (pour $`i_k`$ dans l'ensemble $`\{1, \dots, N\}`$) sous sa forme directe ($`x_{i_k}`$) ou inversée ($`\neg x_{i_k}`$).
-
-La configuration de spins du système est notée $`\sigma \in \{-1, +1\}^N`$, avec $`s_i = \sigma_i`$ le spin de la variable $`x_i`$ (où $`+1`$ correspond à la valeur de vérité Vrai et $`-1`$ à Faux).
-
-Pour chaque littéral $`\ell_{C,k}`$ (pour $`k`$ dans $`\{1, 2, 3\}`$), on définit sa polarité $`\eta_{C,k}`$ dans $`\{-1, +1\}`$ par l'expression mathématique :
-
-```math
-\eta_{C,k} = 1 - 2 \cdot \mathbf{1}(\ell_{C,k} = \neg x_{i_k})
-```
-
-La valeur du littéral sous la configuration $`\sigma`$ est alors donnée par :
-
-```math
-L_{C,k} = \eta_{C,k} s_{i_k}
-```
-
-L'énergie de Gibbs globale de la formule 3-SAT est donnée par :
-
-```math
-U(\sigma) = u \sum_{C \in \mathcal{C}} \mathbf{1}(L_{C,1} = L_{C,2} = L_{C,3} = -1)
-```
-
-où $`u > 0`$ est la pénalité associée à chaque clause insatisfaite.
+Ce document présente une formulation mathématique rigoureuse et précise d'un algorithme de résolution du problème SAT général (contenant des clauses de taille 1, 2 et 3) adapté aux cas d'applications réels. Cet algorithme repose sur un prétraitement récursif des clauses unitaires, un double transfert d'énergie (intégrant les couplages des clauses de taille 2), une dynamique de Markov hybride combinant un gel de type Swendsen-Wang (sur la partie isotrope et quadratique) et des acceptations de type Metropolis-Hastings (sur la partie orientée et les champs locaux), suivie d'une phase de clustering spectral.
 
 ---
 
-## 2. Décomposition de l'Énergie en Structures Géométriques
+## 1. Modélisation Énergétique des Clauses SAT
 
-Pour chaque clause $`C`$ sur les variables $`\{i_1, i_2, i_3\}`$, la pénalité d'insatisfaction est décomposée en deux composantes distinctes :
+Soit une formule SAT contenant $N$ variables $x_1, \dots, x_N$ et un ensemble de clauses $\mathcal{C}$. La configuration de spins du système est notée $\sigma \in \{-1, +1\}^N$, où le spin $s_i = \sigma_i$ correspond à la variable $x_i$ ($+1$ pour Vrai, $-1$ pour Faux).
 
-1. **Le triangle contradictoire** (base $`\{i_1, i_2, i_3\}`$) :
-   Les trois arêtes ont un signe opposé au produit des polarités des littéraux ($`S_{jk} = -\eta_{C,j} \eta_{C,k}`$). Ce triangle est intrinsèquement frustré. Son indicatrice d'insatisfaction vaut :
+Pour chaque littéral $\ell$ d'une clause, on note $s_i$ sa variable sous-jacente et sa polarité $\eta \in \{-1, +1\}$ définie par :
+$$\eta = 1 - 2 \cdot \mathbf{1}(\ell = \neg x_i)$$
 
-```math
-I_{\mathrm{tri}}(C) = \mathbf{1}(L_{C,1} = L_{C,2} = L_{C,3})
-```
-
-   c'est-à-dire que tous les littéraux de la clause ont la même valeur (soit tous vrais, soit tous faux).
-
-2. **La partie orientée (triangle orienté)** :
-   Son indicatrice d'insatisfaction vaut :
-
-```math
-I_{\mathrm{tet}}(C) = 1 - \mathbf{1}(L_{C,1} = L_{C,2} = L_{C,3} = +1)
-```
-
-   c'est-à-dire qu'il est insatisfait sauf dans l'unique configuration où tous les littéraux de la clause sont à $`+1`$.
-
-L'indicateur d'insatisfaction de la clause $`C`$ est lié à ces structures par la relation d'équivalence :
-
-```math
-\mathbf{1}(L_{C,1} = L_{C,2} = L_{C,3} = -1) = I_{\mathrm{tri}}(C) + I_{\mathrm{tet}}(C) - 1
-```
-
-À une constante additive près (égale à $`-u |\mathcal{C}|`$), le Hamiltonian global s'exprime comme :
-
-```math
-U(\sigma) = \sum_{C \in \mathcal{C}} U_C^{\mathrm{tri}}(\sigma) + \sum_{C \in \mathcal{C}} U_C^{\mathrm{ori}}(\sigma)
-```
-
-où :
-* $`U_C^{\mathrm{tri}}(\sigma) = u I_{\mathrm{tri}}(C) = u \mathbf{1}(L_{C,1} = L_{C,2} = L_{C,3})`$
-* $`U_C^{\mathrm{ori}}(\sigma) = u I_{\mathrm{tet}}(C) = u \left(1 - \mathbf{1}(L_{C,1} = L_{C,2} = L_{C,3} = +1)\right)`$
+La valeur du littéral est $L = \eta s_i$. Une clause $C$ contenant des littéraux $L_{C,1}, \dots, L_{C,k}$ (avec $k \in \{1, 2, 3\}$) est insatisfaite si et seulement si tous ses littéraux valent $-1$. L'énergie globale du système est la somme des pénalités $u > 0$ associées aux clauses insatisfaites :
+$$U(\sigma) = u \sum_{C \in \mathcal{C}} \mathbf{1}\left(\forall j \in \{1, \dots, |C|\}, \, L_{C,j} = -1\right)$$
 
 ---
 
-## 3. Le Double Transfert d'Énergie et l'Annulation de la Frustration
+## 2. Décomposition de l'Énergie selon la Taille des Clauses
 
-### Premier Transfert : Des Triangles Contradictoires vers les Arêtes
-Pour chaque clause $`C`$ sur les variables $`\{i_1, i_2, i_3\}`$, l'énergie du triangle contradictoire $`U_C^{\mathrm{tri}}(\sigma)`$ est redistribuée sur ses trois arêtes constitutives $`\{i_j, i_k\}`$ (pour $`j, k`$ dans $`\{1, 2, 3\}`$ avec $`j < k`$). Chaque arête reçoit une contribution de poids $`u/2`$ avec le signe opposé au produit des polarités :
+Chaque clause est projetée sous forme de couplages (arêtes), de structures d'ordre supérieur (triangles) ou de champs locaux.
 
-```math
-W_{i_j i_k}^{(C)} = - \eta_{C,j} \eta_{C,k} \frac{u}{2}
-```
+### 2.1. Clauses de taille 1 (Unitaires : $C = \ell_1$)
+L'indicatrice d'insatisfaction vaut :
+$$\mathbf{1}(L_1 = -1) = \frac{1 - \eta_1 s_1}{2} = \frac{1}{2} - \frac{\eta_1}{2} s_1$$
+Elle se traduit par :
+* Un décalage constant d'énergie de $u/2$ (ignoré).
+* Un **champ magnétique local** (champ orienté) agissant sur le spin $s_1$ :
+$$h_1^{\mathrm{unit}} = \frac{u \eta_1}{2}$$
 
-En sommant les contributions de toutes les clauses sur chaque paire de variables $`\{i, j\}`$, on obtient le poids global de l'arête :
+### 2.2. Clauses de taille 2 (Binaires : $C = \ell_1 \lor \ell_2$)
+L'indicatrice d'insatisfaction vaut :
+$$\mathbf{1}(L_1 = -1 \text{ et } L_2 = -1) = \frac{1 - \eta_1 s_1}{2} \cdot \frac{1 - \eta_2 s_2}{2} = \frac{1}{4} - \frac{\eta_1}{4} s_1 - \frac{\eta_2}{4} s_2 + \frac{\eta_1 \eta_2}{4} s_1 s_2$$
 
-```math
-W_{ij} = \sum_{C \in \mathcal{C} \,:\, \{i,j\} \subset C} W_{ij}^{(C)}
-```
+À une constante d'énergie près, la clause binaire est encodée par :
+1. **Une arête non orientée (couplage spin-spin)** entre $s_1$ et $s_2$ de poids $u/4$ et de **polarité inverse** de celle des littéraux :
+$$W_{12}^{\mathrm{bin}} = - \frac{u \eta_1 \eta_2}{4}$$
+*(Exemple : si $\eta_1 = \eta_2 = 1$ (positifs), le couplage est de $+u/4$, ce qui est antiferromagnétique, favorisant des spins opposés pour éviter la configuration insatisfaite $(-1, -1)$).*
+2. **Une arête orientée (champs magnétiques locaux)** agissant comme une force de rappel de poids $u/4$ favorisant l'alignement des spins avec leurs littéraux respectifs :
+$$h_1^{\mathrm{bin}} = \frac{u \eta_1}{4}, \quad h_2^{\mathrm{bin}} = \frac{u \eta_2}{4}$$
 
-> [!NOTE]
-> De nombreuses variables apparaissant dans des clauses différentes avec des polarités opposées, leurs contributions énergétiques $`W_{ij}^{(C)}`$ de signes contraires se compensent et s'annulent mutuellement dans la somme. Cette compensation élimine une part importante de la frustration globale du système.
+### 2.3. Clauses de taille 3 (Ternaires : $C = \ell_1 \lor \ell_2 \lor \ell_3$)
+L'indicatrice d'insatisfaction $\mathbf{1}(L_1 = L_2 = L_3 = -1)$ est décomposée en :
+1. **Un triangle contradictoire (partie isotrope)** représentant la frustration topologique :
+$$I_{\mathrm{tri}}(C) = \mathbf{1}(L_1 = L_2 = L_3)$$
+2. **Un triangle orienté (partie orientée)** :
+$$I_{\mathrm{ori}}(C) = 1 - \mathbf{1}(L_1 = L_2 = L_3 = 1)$$
+De sorte que :
+$$\mathbf{1}(L_1 = L_2 = L_3 = -1) = I_{\mathrm{tri}}(C) + I_{\mathrm{ori}}(C) - 1$$
 
-### Second Transfert : Des Arêtes vers les Triangles Isotropes
-Afin de maximiser les corrélations de gel globales, on redistribue à nouveau la plus grande fraction possible de l'énergie des arêtes $`W_{ij}`$ vers des triangles isotropes non orientés.
-On cherche un ensemble de poids de triangles $`\omega_t \ge 0`$ pour chaque triangle $`t = \{a, b, c\}`$ du graphe en résolvant le programme d'optimisation linéaire suivant :
+---
 
-```math
-\max_{\omega} \sum_{t} \omega_t
-```
+## 3. Double Transfert d'Énergie et Compensation de la Frustration
 
-sous les contraintes, pour chaque arête $`\{i, j\}`$ :
+### Premier Transfert : Des structures isotropes vers le graphe d'interactions
+On regroupe toutes les arêtes non orientées et les triangles contradictoires sur le graphe de couplage quadratique initial :
+1. **Contributions des 3-clauses** : Chaque triangle contradictoire $C$ sur $\{i_1, i_2, i_3\}$ est projeté sur ses trois arêtes constitutives $\{i_j, i_k\}$ avec un poids $u/2$ et une polarité de jauge :
+$$W_{i_j i_k}^{(C), \mathrm{tri}} = - \eta_{j} \eta_{k} \frac{u}{2}$$
+2. **Contributions des 2-clauses** : Chaque clause binaire $C$ sur $\{i_1, i_2\}$ ajoute directement son couplage quadratique :
+$$W_{i_1 i_2}^{(C), \mathrm{bin}} = - \eta_{1} \eta_{2} \frac{u}{4}$$
 
-```math
-\sum_{t \supset \{i,j\}} \omega_t \le |W_{ij}|
-```
+En sommant les contributions de toutes les clauses sur chaque paire de variables $\{i, j\}$, on obtient le poids d'arête global initial :
+$$W_{ij} = \sum_{C \in \mathcal{C}_3 \,:\, \{i,j\} \subset C} W_{ij}^{(C), \mathrm{tri}} + \sum_{C \in \mathcal{C}_2 \,:\, \{i,j\} = C} W_{ij}^{(C), \mathrm{bin}}$$
 
-et pour chaque triangle $`t = \{a, b, c\}`$, la cohérence des signes doit être respectée (le produit des signes des arêtes du triangle doit être $`+1`$, de sorte que le triangle soit non frustré).
+Les clauses de polarités opposées s'annulent mutuellement dans cette somme (compensation de la frustration).
 
-> [!NOTE]
-> L'optimisation s'effectue sur tous les triangles $`t`$ apparaissant du fait des arêtes, et non seulement sur les triangles issus des clauses originelles. Ce mécanisme fait spontanément apparaître de nouvelles structures.
-
-Une fois les poids de triangles optimaux $`\omega_t`$ calculés, on définit :
-* Les triangles isotropes $`T_{\mathrm{iso}}`$ avec leurs poids $`\omega_t > 0`$.
-* Les poids résiduels des arêtes $`W_{ij}^{\mathrm{res}}`$ sur l'ensemble d'arêtes $`E_{\mathrm{res}}`$ :
-
-```math
-W_{ij}^{\mathrm{res}} = W_{ij} - \mathrm{sign}(W_{ij}) \sum_{t \supset \{i,j\}} \omega_t
-```
-
-Le Hamiltonian du système est réécrit de manière équivalente sous la forme :
-
-```math
-U(\sigma) = \sum_{e \in E_{\mathrm{res}}} \psi_{W_e^{\mathrm{res}}}(\sigma) + \sum_{t \in T_{\mathrm{iso}}} U_t^{\mathrm{iso}}(\sigma) + \sum_{C \in \mathcal{C}} U_C^{\mathrm{ori}}(\sigma)
-```
-
-où :
-* $`\psi_{W_e^{\mathrm{res}}}(\sigma) = |W_e^{\mathrm{res}}| \mathbf{1}(s_i \neq \mathrm{sign}(W_e^{\mathrm{res}}) s_j)`$ est le potentiel de l'arête résiduelle.
-* $`U_t^{\mathrm{iso}}(\sigma) = 2 \omega_t \mathbf{1}(\sigma \text{ ne satisfait pas } t)`$ est le potentiel du triangle isotrope. Un triangle est satisfait par $`\sigma`$ si les signes des spins sur ses sommets respectent le signe de ses trois arêtes.
-* $`U_C^{\mathrm{ori}}(\sigma) = u \left(1 - \mathbf{1}(L_{C,1} = L_{C,2} = L_{C,3} = +1)\right)`$ est l'énergie du triangle orienté.
+### Second Transfert : Des arêtes vers les triangles isotropes
+On résout le programme d'optimisation linéaire (LP) pour transférer le maximum possible de l'énergie des arêtes $W_{ij}$ vers des triangles isotropes non orientés à 3 spins :
+$$\max_{\omega} \sum_{t} \omega_t$$
+sous les contraintes de poids résiduels positifs pour chaque arête $\{i, j\}$ :
+$$\sum_{t \supset \{i,j\}} \omega_t \le |W_{ij}|$$
+Cela définit les poids des triangles isotropes $\omega_t \ge 0$ et le poids final des arêtes résiduelles :
+$$W_{ij}^{\mathrm{res}} = W_{ij} - \mathrm{sign}(W_{ij}) \sum_{t \supset \{i,j\}} \omega_t$$
 
 ---
 
 ## 4. La Dynamique Markovienne Hybride
 
-La structure hybride de l'énergie permet de construire une dynamique de transition en deux étapes.
+Le Hamiltonian global se divise en deux parties pour l'échantillonnage :
+$$U(\sigma) = U_{\mathrm{iso}}(\sigma) + U_{\mathrm{ori}}(\sigma)$$
+* **La partie isotrope/symétrique** ($U_{\mathrm{iso}}$) comprend les arêtes résiduelles $W_{ij}^{\mathrm{res}}$ et les triangles isotropes $\omega_t$.
+* **La partie orientée/champs locaux** ($U_{\mathrm{ori}}$) comprend les triangles orientés $I_{\mathrm{ori}}(C)$, les champs locaux des clauses binaires $h_i^{\mathrm{bin}}$, et les champs locaux des clauses unitaires $h_i^{\mathrm{unit}}$.
 
 ### Étape 1 : Phase de Gel de Swendsen-Wang (Partie Isotrope)
-On applique la dynamique de gel sur les composantes isotropes de l'énergie ($`E_{\mathrm{res}}`$ et $`T_{\mathrm{iso}}`$) :
-1. **Sur les arêtes résiduelles $`e \in E_{\mathrm{res}}`$** :
-   Si l'arête $`e = \{i, j\}`$ est satisfaite par la configuration courante $`\sigma`$ (c'est-à-dire $`s_i s_j \mathrm{sign}(W_e^{\mathrm{res}}) > 0`$), on la gèle avec la probabilité :
+On forme des clusters gelés sur la partie isotrope :
+1. **Sur les arêtes résiduelles $e = \{i, j\}$** : Si elle est satisfaite ($s_i s_j \mathrm{sign}(W_e^{\mathrm{res}}) > 0$), on la gèle avec probabilité :
+$$p_{\mathrm{gel}}(e) = 1 - e^{-|W_e^{\mathrm{res}}|}$$
+2. **Sur les triangles isotropes $t$** : On applique le gel corrélé triangulaire :
+   * **Triangle attractif** : Si les 3 arêtes sont satisfaites, on les gèle ensemble avec probabilité $1 - e^{-2\omega_t}$. Sinon, on ne gèle rien.
+   * **Triangle frustré** : Si le triangle est dans son état de basse énergie (2 arêtes satisfaites), on gèle l'une d'elles équiprobablement avec probabilité $\frac{1}{2}(1 - e^{-2\omega_t})$. Sinon, on ne gèle rien.
 
-```math
-p_{\mathrm{gel}}(e) = 1 - e^{-|W_e^{\mathrm{res}}|}
-```
+Cette étape définit une partition des variables actives en clusters gelés $\{K_1, \dots, K_M\}$.
 
-   Si elle n'est pas satisfaite, elle n'est pas gelée.
-
-2. **Sur les triangles isotropes $`t \in T_{\mathrm{iso}}`$** :
-   On applique la règle de gel locale corrélée de type Swendsen-Wang triangulaire. Les triangles signés sont classés en deux familles selon leur frustration locale :
-   * **Si $`t`$ est non frustré / potentiellement contradictoire** (le produit des signes de ses arêtes est $`+1`$, ce qui correspond par invariance de jauge au triangle attractif) :
-     * Si toutes ses arêtes sont satisfaites par la configuration courante $`\sigma`$, on gèle les 3 arêtes ensemble avec la probabilité $`a_{\omega_t} = 1 - e^{-2\omega_t}`$, et aucune arête avec la probabilité $`b_{\omega_t} = e^{-2\omega_t}`$.
-     * Si le triangle est insatisfait par $`\sigma`$ (au moins une arête n'est pas satisfaite), on ne gèle aucune de ses arêtes.
-   * **Si $`t`$ est frustré / intrinsèquement contradictoire** (le produit des signes de ses arêtes est $`-1`$, ce qui correspond par invariance de jauge au triangle répulsif) :
-     * Si le triangle est dans un état de basse énergie (exactement deux de ses arêtes sont satisfaites par $`\sigma`$), on gèle l'une de ces deux arêtes satisfaites (choisie de façon équiprobable) avec probabilité $`a_{\omega_t}/2`$, et aucune arête avec probabilité $`b_{\omega_t} = e^{-2\omega_t}`$.
-     * Si le triangle est dans son état de haute énergie (aucune arête n'est satisfaite par $`\sigma`$), on ne gèle aucune de ses arêtes.
-
-Cette étape de gel définit une partition des variables $`V`$ en un ensemble de clusters gelés $`K = \{K_1, K_2, \dots, K_M\}`$.
-
-### Étape 2 : Recoloriage par Metropolis-Hastings (Partie Orientée)
-Les clusters de variables $`K`$ doivent être recoloriés. Pour chaque cluster $`K_m \in K`$, on propose d'inverser globalement l'état de ses spins ($`s_i \leftarrow -s_i`$ pour tout $`i \in K_m`$).
-
-Pour chaque cluster $`K_m`$, on propose le flip de tous ses spins. Soit $`\sigma^{(0)}`$ la configuration courante et $`\sigma^{(1)}`$ la configuration candidate avec le cluster $`K_m`$ inversé. La transition est acceptée selon un critère de Metropolis-Hastings basé exclusivement sur la variation de la partie orientée de l'énergie :
-
-```math
-\alpha(K_m) = \min\left(1, e^{-\Delta U^{\mathrm{ori}}}\right)
-```
-
-avec :
-
-```math
-\Delta U^{\mathrm{ori}} = U^{\mathrm{ori}}(\sigma^{(1)}) - U^{\mathrm{ori}}(\sigma^{(0)})
-```
-
-où $`U^{\mathrm{ori}}(\sigma) = u \sum_{C \in \mathcal{C}} \left(1 - \mathbf{1}(L_{C,1} = L_{C,2} = L_{C,3} = +1)\right)`$.
+### Étape 2 : Recoloriage par Metropolis-Hastings (Partie Orientée et Champs)
+Pour chaque cluster $K_m$, on propose d'inverser globalement l'état de ses spins ($\sigma_i \leftarrow -\sigma_i$ pour tout $i \in K_m$).
+Le flip du cluster $K_m$ est accepté selon le critère de Metropolis-Hastings basé sur la variation de la partie orientée globale (incluant les champs locaux) :
+$$\alpha(K_m) = \min\left(1, e^{-\Delta U_{\mathrm{ori}}}\right)$$
+où :
+$$U_{\mathrm{ori}}(\sigma) = u \sum_{C \in \mathcal{C}_3} I_{\mathrm{ori}}(C) - \sum_{i=1}^{N_{\mathrm{red}}} h_i^{\mathrm{tot}} s_i$$
+avec $h_i^{\mathrm{tot}} = \sum_{C \in \mathcal{C}_2} h_i^{(C), \mathrm{bin}} + \sum_{C \in \mathcal{C}_1} h_i^{(C), \mathrm{unit}}$ la somme de tous les champs magnétiques orientés s'appliquant sur la variable $x_i$.
 
 ---
 
-## 5. Description Complète de l'Algorithme
+## 5. Description Algorithmique Complète
 
-L'algorithme global de résolution se déroule comme suit :
+L'algorithme de résolution se déroule comme suit :
 
-1. **Pré-traitement (Élimination des littéraux purs et des variables orphelines)** :
-   * Si une variable $`x_i`$ n'apparaît qu'avec une seule polarité (uniquement sous sa forme directe $`x_i`$, ou uniquement sous sa forme inversée $`\neg x_i`$), fixer son spin $`s_i`$ à la polarité correspondante pour la solution finale, et supprimer cette variable de la formule ainsi que toutes les clauses dans lesquelles elle apparaît.
-   * Si une variable n'apparaît dans aucune clause (variable orpheline), son spin est fixé arbitrairement (par exemple à $`+1`$) et elle est retirée des variables actives sans qu'aucune clause ne soit supprimée.
-   * Répéter ces opérations de manière récursive jusqu'à ce que plus aucune variable ne présente une polarité unique ou ne soit orpheline.
+1. **Pré-traitement récursif des clauses unitaires** :
+   Pour chaque variable $x_i$ apparaissant dans une clause unitaire $[l]$ :
+   * On calcule son énergie sous l'assignation recommandée $l = 1$ (énergie de satisfaction de la clause unitaire).
+   * On identifie l'ensemble des clauses $C_{\mathrm{opp}}$ dans lesquelles $x_i$ apparaît sous sa forme inversée $\neg l$.
+   * **Condition d'assignation forcée** : Si $1 > |C_{\mathrm{opp}}|$, alors l'assignation de force $l=1$ garantit une amélioration stricte de l'énergie minimale dans le pire des cas.
+     * Si cette condition est satisfaite, on assigne de force le spin à sa valeur satisfaisante, on supprime la variable et ses clauses satisfaites, on raccourcit les autres et on recommence récursivement (propagation unitaire).
+     * Si la condition n'est pas satisfaite, on n'assigne pas la variable. La clause unitaire est conservée et sera encodée sous la forme d'un champ magnétique local $h_i^{\mathrm{unit}}$ lors de l'initialisation du solveur.
 
-2. **Initialisation et double transfert d'énergie** :
-   * Sur la formule réduite, construire le graphe de départ en décomposant les clauses restantes en triangles contradictoires et orientés.
-   * Transférer l'énergie $`U_C^{\mathrm{tri}}`$ vers les poids d'arêtes initiaux $`W_{ij}`$.
-   * Résoudre le problème d'optimisation linéaire pour transférer le maximum de poids vers les triangles isotropes $`T_{\mathrm{iso}}`$, et obtenir les arêtes résiduelles $`E_{\mathrm{res}}`$.
+2. **Élimination des littéraux purs et des variables orphelines** :
+   On applique la réduction habituelle des littéraux purs sur le reste des variables et des clauses de manière récursive.
 
-3. **Échantillonnage MCMC** :
-   Partir d'une configuration aléatoire $`\sigma^{(0)}`$ sur les variables restantes. Pour chaque étape $`s`$ de 1 à $`S_{\mathrm{steps}}`$ :
-   * Appliquer la phase de gel de Swendsen-Wang pour former les clusters $`K`$.
-   * Pour chaque cluster $`K_m`$ dans $`K`$, appliquer l'étape de Metropolis-Hastings avec l'énergie orientée $`U^{\mathrm{ori}}`$.
-   * Stocker la configuration résultante $`\sigma^{(s)}`$.
+3. **Initialisation et double transfert d'énergie** :
+   * Les clauses binaires restantes sont converties en couplages quadratiques dans $W_{ij}$ et en champs locaux $h_i^{\mathrm{bin}}$.
+   * Les clauses ternaires restantes sont décomposées en triangles contradictoires (projetés sur $W_{ij}$) et triangles orientés.
+   * Résolution du LP pour transférer le maximum possible de $W_{ij}$ vers les triangles isotropes $T_{\mathrm{iso}}$ et obtenir $W_{ij}^{\mathrm{res}}$.
 
-4. **Calcul de la matrice de corrélation empirique** :
-   À l'aide des configurations échantillonnées, calculer l'estimateur empirique de la matrice de covariance (corrélation spin-spin) $`\hat{\Gamma} \in \mathbb{R}^{N_{\mathrm{red}} \times N_{\mathrm{red}}}`$ (où $`N_{\mathrm{red}}`$ est le nombre de variables restantes) :
-
-```math
-\hat{\Gamma}_{ij} = \hat{\mathbb{E}}[\sigma_i \sigma_j] - \hat{\mathbb{E}}[\sigma_i] \hat{\mathbb{E}}[\sigma_j]
-```
-
-   où :
-
-```math
-\hat{\mathbb{E}}[f(\sigma)] = \frac{1}{S_{\text{steps}}} \sum_{s=1}^{S_{\text{steps}}} f(\sigma^{(s)})
-```
+4. **Échantillonnage MCMC Hybride** :
+   Sur les spins actifs, exécuter les cycles de gel de Swendsen-Wang (partie isotrope et quadratique) suivis des inversions de clusters Metropolis-Hastings acceptées selon $U_{\mathrm{ori}}$ (partie orientée et champs totaux).
 
 5. **Clustering Spectral Signé** :
-   On applique un clustering spectral à deux communautés sur la matrice de corrélation $`\hat{\Gamma}`$.
-   * Définir la matrice des degrés absolus $`D \in \mathbb{R}^{N_{\mathrm{red}} \times N_{\mathrm{red}}}`$ :
+   Calcul de la covariance empirique $\hat{\Gamma}$ sur les étapes échantillonnées post-burn-in, construction du Laplacien signé $L_{\mathrm{signed}} = D - \hat{\Gamma}$, et partition spectrale basée sur le signe du vecteur propre de plus petite valeur propre.
 
-```math
-D_{ii} = \sum_{j=1}^{N_{\mathrm{red}}} |\hat{\Gamma}_{ij}|
-```
-
-   * Construire le Laplacien signé :
-
-```math
-L_{\mathrm{signed}} = D - \hat{\Gamma}
-```
-
-   * Calculer le vecteur propre $`v_{\min} \in \mathbb{R}^{N_{\mathrm{red}}}`$ correspondant à la plus petite valeur propre de $`L_{\mathrm{signed}}`$ (ou de sa version normalisée $`D^{-1/2} L_{\mathrm{signed}} D^{-1/2}`$).
-   * Déterminer la partition résultante $`\sigma^{\mathrm{spectral}}`$ dans $`\{-1, +1\}^{N_{\mathrm{red}}}`$ par :
-
-```math
-\sigma_i^{\mathrm{spectral}} = \mathrm{sign}(v_{\min, i})
-```
-
-6. **Sélection de la configuration optimale** :
-   Puisque l'overlap est défini modulo une permutation globale ($`\sigma \leftrightarrow -\sigma`$), on évalue l'énergie 3-SAT initiale $`U(\sigma)`$ (sur l'ensemble des clauses d'origine, en réincorporant les spins des variables fixées à l'étape 1) pour $`\sigma^{\mathrm{spectral}}`$ et $`-\sigma^{\mathrm{spectral}}`$.
-   On renvoie la configuration globale $`\sigma^*`$ minimisant cette énergie :
-
-```math
-\sigma^* = \arg\min_{\sigma \in \{\sigma^{\mathrm{spectral}}, -\sigma^{\mathrm{spectral}}\}} U(\sigma)
-```
+6. **Sélection et recomposition** :
+   Évaluation des énergies globales avec les variables fixées au prétraitement, et sélection du meilleur candidat.
