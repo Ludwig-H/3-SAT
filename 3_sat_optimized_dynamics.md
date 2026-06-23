@@ -208,7 +208,7 @@ L'algorithme de résolution se déroule comme suit :
    Sur les spins actifs, exécuter les cycles de gel de Swendsen-Wang (partie isotrope et quadratique) suivis des inversions de clusters Metropolis-Hastings acceptées selon $U_{\mathrm{ori}}$ (partie orientée et champs totaux).
 
 5. **Clustering Spectral Signé** :
-   Calcul de la covariance empirique $\hat{\Gamma}$ sur les étapes échantillonnées post-burn-in, construction du Laplacien signé $L_{\mathrm{signed}} = D - \hat{\Gamma}$, et partition spectrale basée sur le signe du vecteur propre de plus petite valeur propre.
+   Calcul de la matrice d'espérance $\mathbb E[\sigma_i \sigma_j]$ sur les étapes échantillonnées post-burn-in, construction du Laplacien signé $L_{\mathrm{signed}} = D - \mathbb E[\sigma \sigma^T]$, et partition spectrale basée sur le signe du vecteur propre de plus petite valeur propre.
 
 6. **Sélection et recomposition** :
    Évaluation des énergies globales avec les variables fixées au prétraitement, et sélection du meilleur candidat.
