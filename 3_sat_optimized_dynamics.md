@@ -112,6 +112,9 @@ sous les contraintes, pour chaque arête $`\{i, j\}`$ :
 
 et pour chaque triangle $`t = \{a, b, c\}`$, la cohérence des signes doit être respectée (le produit des signes des arêtes du triangle doit être $`+1`$, de sorte que le triangle soit non frustré).
 
+> [!NOTE]
+> L'optimisation s'effectue sur tous les triangles $`t`$ apparaissant du fait des arêtes, et non seulement sur les triangles issus des clauses originelles. Ce mécanisme fait spontanément apparaître de nouvelles structures.
+
 Une fois les poids de triangles optimaux $`\omega_t`$ calculés, on définit :
 * Les triangles isotropes $`T_{\mathrm{iso}}`$ avec leurs poids $`\omega_t > 0`$.
 * Les poids résiduels des arêtes $`W_{ij}^{\mathrm{res}}`$ sur l'ensemble d'arêtes $`E_{\mathrm{res}}`$ :
