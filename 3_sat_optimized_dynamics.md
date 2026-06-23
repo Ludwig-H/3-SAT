@@ -48,22 +48,21 @@ $$
 L'indicatrice d'insatisfaction vaut :
 
 $$
-\mathbf{1}(L_1 = -1 \text{ et } L_2 = -1) = \frac{1 - \eta_1 s_1}{2} \cdot \frac{1 - \eta_2 s_2}{2} = \frac{1}{4} - \frac{\eta_1}{4} s_1 - \frac{\eta_2}{4} s_2 + \frac{\eta_1 \eta_2}{4} s_1 s_2
+\mathbf{1}(L_1 = -1 \text{ et } L_2 = -1) = \mathbf{1}(L_1 = L_2) + (1 - \mathbf{1}(L_1 = 1 \text{ et } L_2 = 1)) - 1
 $$
 
-
-À une constante d'énergie près, la clause binaire est encodée par :
-1. **Une arête non orientée (couplage spin-spin)** entre $`s_1`$ et $`s_2`$ de poids $`u/4`$ et de **polarité inverse** de celle des littéraux :
-
-$$
-W_{12}^{\mathrm{bin}} = - \frac{u \eta_1 \eta_2}{4}
-$$
-
-*(Exemple : si $`\eta_1 = \eta_2 = 1`$ (positifs), le couplage est de $`+u/4`$, ce qui est antiferromagnétique, favorisant des spins opposés pour éviter la configuration insatisfaite $`(-1, -1)`$).*
-2. **Une arête orientée (champs magnétiques locaux)** agissant comme une force de rappel de poids $`u/4`$ favorisant l'alignement des spins avec leurs littéraux respectifs :
+À une constante d'énergie près, la clause binaire de poids $`u`$ est encodée par la combinaison de deux éléments :
+1. **Une arête non orientée (couplage quadratique isotrope)** entre $`s_1`$ et $`s_2`$ de poids $`u`$ et de **polarité inverse** de celle des littéraux, correspondant à $`u \cdot \mathbf{1}(L_1 = L_2)`$ :
 
 $$
-h_1^{\mathrm{bin}} = \frac{u \eta_1}{4}, \quad h_2^{\mathrm{bin}} = \frac{u \eta_2}{4}
+W_{12}^{\mathrm{bin}} = - u \eta_1 \eta_2
+$$
+
+*(Exemple : si $`\eta_1 = \eta_2 = 1`$ (positifs), le couplage est de $`-u`$ sur les spins, ce qui est antiferromagnétique, favorisant des spins opposés pour pénaliser la configuration $`(-1, -1)`$).*
+2. **Une arête orientée (contrainte binaire directionnelle)** de poids $`u`$, qui est satisfaite ($`E=0`$) si et seulement si les deux littéraux sont satisfaits ($`L_1 = 1`$ et $`L_2 = 1`$). Sa pénalité énergétique est de $`u`$ dans tous les autres cas :
+
+$$
+I_{\mathrm{ori\_bin}}(C) = 1 - \mathbf{1}(L_1 = 1 \text{ et } L_2 = 1)
 $$
 
 
@@ -100,10 +99,10 @@ $$
 W_{i_j i_k}^{(C), \mathrm{tri}} = - \eta_{j} \eta_{k} \frac{u}{2}
 $$
 
-2. **Contributions des 2-clauses** : Chaque clause binaire $`C`$ sur $`\lbrace i_1, i_2 \rbrace`$ ajoute directement son couplage quadratique :
+2. **Contributions des 2-clauses** : Chaque clause binaire $`C`$ sur $`\lbrace i_1, i_2 \rbrace`$ ajoute directement son couplage quadratique de polarité inversée de poids $`u`$ :
 
 $$
-W_{i_1 i_2}^{(C), \mathrm{bin}} = - \eta_{1} \eta_{2} \frac{u}{4}
+W_{i_1 i_2}^{(C), \mathrm{bin}} = - \eta_{1} \eta_{2} u
 $$
 
 
@@ -147,7 +146,7 @@ U(\sigma) = U_{\mathrm{iso}}(\sigma) + U_{\mathrm{ori}}(\sigma)
 $$
 
 * **La partie isotrope/symétrique** ($`U_{\mathrm{iso}}`$) comprend les arêtes résiduelles $`W_{ij}^{\mathrm{res}}`$ et les triangles isotropes $`\omega_t`$.
-* **La partie orientée/champs locaux** ($`U_{\mathrm{ori}}`$) comprend les triangles orientés $`I_{\mathrm{ori}}(C)`$, les champs locaux des clauses binaires $`h_i^{\mathrm{bin}}`$, et les champs locaux des clauses unitaires $`h_i^{\mathrm{unit}}`$.
+* **La partie orientée/champs locaux** ($`U_{\mathrm{ori}}`$) comprend les triangles orientés $`I_{\mathrm{ori}}(C)`$, les arêtes orientées binaires $`I_{\mathrm{ori\_bin}}(C)`$ de poids $`u`$, et les champs locaux des clauses unitaires $`h_i^{\mathrm{unit}}`$.
 
 ### Étape 1 : Phase de Gel de Swendsen-Wang (Partie Isotrope)
 On forme des clusters gelés sur la partie isotrope :
@@ -174,10 +173,10 @@ $$
 où :
 
 $$
-U_{\mathrm{ori}}(\sigma) = u \sum_{C \in \mathcal{C}_3} I_{\mathrm{ori}}(C) - \sum_{i=1}^{N_{\mathrm{red}}} h_i^{\mathrm{tot}} s_i
+U_{\mathrm{ori}}(\sigma) = u \sum_{C \in \mathcal{C}_3} I_{\mathrm{ori}}(C) + u \sum_{C \in \mathcal{C}_2} I_{\mathrm{ori\_bin}}(C) - \sum_{i=1}^{N_{\mathrm{red}}} h_i^{\mathrm{tot}} s_i
 $$
 
-avec $`h_i^{\mathrm{tot}} = \sum_{C \in \mathcal{C}_2} h_i^{(C), \mathrm{bin}} + \sum_{C \in \mathcal{C}_1} h_i^{(C), \mathrm{unit}}`$ la somme de tous les champs magnétiques orientés s'appliquant sur la variable $`x_i`$.
+avec $`h_i^{\mathrm{tot}} = \sum_{C \in \mathcal{C}_1} h_i^{(C), \mathrm{unit}}`$ la somme de tous les champs magnétiques orientés des clauses unitaires s'appliquant sur la variable $`x_i`$.
 
 ---
 
@@ -197,7 +196,7 @@ L'algorithme de résolution se déroule comme suit :
    On applique la réduction habituelle des littéraux purs sur le reste des variables et des clauses de manière récursive.
 
 3. **Initialisation et double transfert d'énergie** :
-   * Les clauses binaires restantes sont converties en couplages quadratiques dans $`W_{ij}`$ et en champs locaux $`h_i^{\mathrm{bin}}`$.
+   * Les clauses binaires restantes sont converties en couplages quadratiques de polarité inversée de poids $`u`$ dans $`W_{ij}`$ et en arêtes orientées $`I_{\mathrm{ori\_bin}}`$ de poids $`u`$.
    * Les clauses ternaires restantes sont décomposées en triangles contradictoires (projetés sur $`W_{ij}`$) et triangles orientés.
    * Résolution du LP pour transférer le maximum possible de $`W_{ij}`$ vers les triangles isotropes $`T_{\mathrm{iso}}`$ et obtenir $`W_{ij}^{\mathrm{res}}`$.
 
