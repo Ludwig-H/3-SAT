@@ -73,3 +73,34 @@ Plusieurs dépôts centralisent ces instances au format standard DIMACS CNF :
 | **Modularité ($Q$)** | Très faible ($Q \approx 0$) | Très élevée ($Q \ge 0.7$) |
 | **Variables auxiliaires** | Aucune | Nombreuses (définissant les portes intermédiaires) |
 | **Efficacité du Clustering** | Inefficace (pas de partition naturelle) | **Trés efficace** (isole les composants fonctionnels du problème) |
+
+---
+
+## 5. État de l'Art et Baselines Implémentables en Python
+
+Pour évaluer un nouveau résolveur sur ces benchmarks réels, deux approches de baselines (l'une pragmatique utilisant l'état de l'art, l'autre "from scratch" didactique) sont recommandées en Python :
+
+### A. La Baseline État de l'Art Pragmatique : `PySAT` (CDCL)
+Les résolveurs industriels modernes reposent sur l'architecture **CDCL** (*Conflict-Driven Clause Learning*), qui apprend des clauses de conflit lors des retours sur trace (*backtracking*). Il est inutile de réimplémenter un CDCL complexe en Python pur. 
+* **Solution** : Utiliser la bibliothèque Python `pysat` (`pip install python-sat`), qui fournit des wrappers directs vers les solveurs C++ de l'état de l'art (comme **Glucose**, **MiniSat**, ou **Lingeling**).
+* **Usage en Python** :
+  ```python
+  from pysat.solvers import Glucose3
+  
+  # Initialisation du solveur CDCL avec une liste de clauses
+  with Glucose3(bootstrap_with=list_of_clauses) as solver:
+      if solver.solve():
+          print("SAT:", solver.get_model())
+      else:
+          print("UNSAT")
+  ```
+
+### B. La Baseline Algorithmique "From Scratch" : DPLL avec Heuristique MOMs
+Si l'on souhaite implémenter soi-même un algorithme de résolution en Python pur (par exemple pour le comparer à la dynamique de clusters), un algorithme **DPLL** (*Davis-Putnam-Logemann-Loveland*) avec des optimisations structurelles est la baseline idéale :
+1. **Propagation Unitaire (Unit Propagation)** : Essentielle pour les instances réelles (issues de Tseitin) qui comportent de longues chaînes d'implication logique.
+2. **Élimination des Littéraux Purs (Pure Literal Elimination)** : Simplifie la formule en fixant les variables n'apparaissant que sous une seule polarité.
+3. **Heuristique MOMs** (*Maximum Occurrence in clauses of Minimum size*) : Pour choisir la variable de branchement suivante. Elle calcule pour chaque variable $`x`$ un score basé sur sa fréquence dans les clauses de taille minimale non satisfaites :
+   ```math
+   f(x) = (n(x) + n(\neg x)) \cdot 2^k + n(x) \cdot n(\neg x)
+   ```
+   où $`n(x)`$ (resp. $`n(\neg x)`$) est le nombre d'occurrences du littéral dans les clauses les plus courtes, et $`k`$ est un paramètre de réglage. Cette heuristique est idéale pour le 3-SAT car elle cible spécifiquement les clauses de taille 2 (générées après instanciation d'une variable) pour forcer au plus vite des propagations unitaires et réduire l'arbre de recherche.
