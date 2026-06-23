@@ -52,7 +52,7 @@ Plusieurs dépôts centralisent ces instances au format standard DIMACS CNF :
 
 1. ** SAT Competition Archives (2002–2024)** :
    * C'est la référence absolue. Chaque année, la compétition publie des centaines de nouvelles instances réelles (Industrial Track).
-   * **Accès public** : Dépôt global disponible sur **[Zenodo](https://doi.org/10.5281/zenodo.1147575)** (contient les jeux de données labellisés de toutes les compétitions passées).
+   * **Accès public** : L'archive globale (2002–2024) est disponible sur **[Zenodo (10.5281/zenodo.14828113)](https://doi.org/10.5281/zenodo.14828113)**. Les benchmarks de l'édition 2023 (400 fichiers CNF) sont sur **[Zenodo (10.5281/zenodo.11426992)](https://doi.org/10.5281/zenodo.11426992)**.
    * **Site officiel** : [satcompetition.github.io](https://satcompetition.github.io/)
 
 2. **SATLIB (The Satisfiability Library)** :
