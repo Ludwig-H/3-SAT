@@ -14,7 +14,7 @@ C = \ell_{C,1} \lor \ell_{C,2} \lor \ell_{C,3}
 
 où chaque littéral $`\ell_{C,k}`$ correspond à une variable sous-jacente $`x_{i_k}`$ (pour $`i_k`$ dans l'ensemble $`\{1, \dots, N\}`$) sous sa forme directe ($`x_{i_k}`$) ou inversée ($`\neg x_{i_k}`$).
 
-On introduit un nœud de référence additionnel virtuel $`T`$ représentant l'état « Vrai » (True), dont le spin est fixé à $`s_T = +1`$. La configuration de spins du système est notée $`\sigma`$ dans $`\{-1, +1\}^N`$, avec $`s_i = \sigma_i`$ le spin de la variable $`x_i`$.
+La configuration de spins du système est notée $`\sigma \in \{-1, +1\}^N`$, avec $`s_i = \sigma_i`$ le spin de la variable $`x_i`$ (où $`+1`$ correspond à la valeur de vérité Vrai et $`-1`$ à Faux).
 
 Pour chaque littéral $`\ell_{C,k}`$ (pour $`k`$ dans $`\{1, 2, 3\}`$), on définit sa polarité $`\eta_{C,k}`$ dans $`\{-1, +1\}`$ par l'expression mathématique :
 
@@ -40,7 +40,7 @@ où $`u > 0`$ est la pénalité associée à chaque clause insatisfaite.
 
 ## 2. Décomposition de l'Énergie en Structures Géométriques
 
-Pour chaque clause $`C`$ sur les variables $`\{i_1, i_2, i_3\}`$, la pénalité d'insatisfaction est décomposée géométriquement sur le tétraèdre $`\{i_1, i_2, i_3, T\}`$ en deux composantes distinctes :
+Pour chaque clause $`C`$ sur les variables $`\{i_1, i_2, i_3\}`$, la pénalité d'insatisfaction est décomposée en deux composantes distinctes :
 
 1. **Le triangle contradictoire** (base $`\{i_1, i_2, i_3\}`$) :
    Les trois arêtes ont un signe opposé au produit des polarités des littéraux ($`S_{jk} = -\eta_{C,j} \eta_{C,k}`$). Ce triangle est intrinsèquement frustré. Son indicatrice d'insatisfaction vaut :
@@ -51,8 +51,8 @@ I_{\mathrm{tri}}(C) = \mathbf{1}(L_{C,1} = L_{C,2} = L_{C,3})
 
    c'est-à-dire que tous les littéraux de la clause ont la même valeur (soit tous vrais, soit tous faux).
 
-2. **Le tétraèdre conforme (triangle orienté)** :
-   Cette structure inclut le nœud virtuel $`T`$. Son indicatrice d'insatisfaction vaut :
+2. **La partie orientée (triangle orienté)** :
+   Son indicatrice d'insatisfaction vaut :
 
 ```math
 I_{\mathrm{tet}}(C) = 1 - \mathbf{1}(L_{C,1} = L_{C,2} = L_{C,3} = +1)
@@ -132,7 +132,7 @@ U(\sigma) = \sum_{e \in E_{\mathrm{res}}} \psi_{W_e^{\mathrm{res}}}(\sigma) + \s
 où :
 * $`\psi_{W_e^{\mathrm{res}}}(\sigma) = |W_e^{\mathrm{res}}| \mathbf{1}(s_i \neq \mathrm{sign}(W_e^{\mathrm{res}}) s_j)`$ est le potentiel de l'arête résiduelle.
 * $`U_t^{\mathrm{iso}}(\sigma) = 2 \omega_t \mathbf{1}(\sigma \text{ ne satisfait pas } t)`$ est le potentiel du triangle isotrope. Un triangle est satisfait par $`\sigma`$ si les signes des spins sur ses sommets respectent le signe de ses trois arêtes.
-* $`U_C^{\mathrm{ori}}(\sigma) = u \left(1 - \mathbf{1}(L_{C,1} = L_{C,2} = L_{C,3} = +1)\right)`$ est l'énergie du triangle orienté (tétraèdre).
+* $`U_C^{\mathrm{ori}}(\sigma) = u \left(1 - \mathbf{1}(L_{C,1} = L_{C,2} = L_{C,3} = +1)\right)`$ est l'énergie du triangle orienté.
 
 ---
 
@@ -163,7 +163,7 @@ p_{\mathrm{gel}}(e) = 1 - e^{-|W_e^{\mathrm{res}}|}
 Cette étape de gel définit une partition des variables $`V`$ en un ensemble de clusters gelés $`K = \{K_1, K_2, \dots, K_M\}`$.
 
 ### Étape 2 : Recoloriage par Metropolis-Hastings (Partie Orientée)
-Les clusters de variables $`K`$ doivent être recoloriés. Puisque le spin du nœud de référence $`T`$ est fixé à $`s_T = +1`$, la couleur (spin) du cluster contenant $`T`$ est fixée, tandis que tout autre cluster $`K_m`$ peut être soit conservé dans son état actuel, soit inversé globalement ($`s_i \leftarrow -s_i`$ pour tout $`i \in K_m`$).
+Les clusters de variables $`K`$ doivent être recoloriés. Pour chaque cluster $`K_m \in K`$, on propose d'inverser globalement l'état de ses spins ($`s_i \leftarrow -s_i`$ pour tout $`i \in K_m`$).
 
 Pour chaque cluster $`K_m`$, on propose le flip de tous ses spins. Soit $`\sigma^{(0)}`$ la configuration courante et $`\sigma^{(1)}`$ la configuration candidate avec le cluster $`K_m`$ inversé. La transition est acceptée selon un critère de Metropolis-Hastings basé exclusivement sur la variation de la partie orientée de l'énergie :
 
