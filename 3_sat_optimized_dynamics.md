@@ -59,7 +59,7 @@ $$
 W_{12}^{\mathrm{bin}} = - u \eta_1 \eta_2
 $$
 
-*(Exemple : si $\eta_1 = \eta_2 = 1$ (positifs), le couplage vaut $-u$, ce qui est antiferromagnétique et favorise des spins opposés pour pénaliser la configuration $(-1, -1)$).*
+> **Exemple :** si $\eta_1 = \eta_2 = 1$ (positifs), le couplage vaut $-u$, ce qui est antiferromagnétique et favorise des spins opposés pour pénaliser la configuration $(-1, -1)$.
 
 2. **Une arête orientée (contrainte binaire directionnelle)** de poids $u$, qui est satisfaite ($E=0$) si et seulement si les deux littéraux sont satisfaits ($L_1 = 1$ et $L_2 = 1$) :
 
