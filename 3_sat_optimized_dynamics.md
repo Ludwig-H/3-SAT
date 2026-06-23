@@ -185,19 +185,23 @@ où $`U^{\mathrm{ori}}(\sigma) = u \sum_{C \in \mathcal{C}} \left(1 - \mathbf{1}
 
 L'algorithme global de résolution se déroule comme suit :
 
-1. **Initialisation et double transfert d'énergie** :
-   * Construire le graphe de départ en décomposant les clauses en triangles contradictoires et orientés.
+1. **Pré-traitement (Élimination des littéraux purs)** :
+   * Si une variable $`x_i`$ n'apparaît qu'avec une seule polarité (uniquement sous sa forme directe $`x_i`$, ou uniquement sous sa forme inversée $`\neg x_i`$), fixer son spin $`s_i`$ à la polarité correspondante pour la solution finale.
+   * Supprimer cette variable de la formule, ainsi que toutes les clauses dans lesquelles elle apparaît. Répéter cette opération de manière récursive jusqu'à ce que plus aucune variable ne présente une polarité unique.
+
+2. **Initialisation et double transfert d'énergie** :
+   * Sur la formule réduite, construire le graphe de départ en décomposant les clauses restantes en triangles contradictoires et orientés.
    * Transférer l'énergie $`U_C^{\mathrm{tri}}`$ vers les poids d'arêtes initiaux $`W_{ij}`$.
    * Résoudre le problème d'optimisation linéaire pour transférer le maximum de poids vers les triangles isotropes $`T_{\mathrm{iso}}`$, et obtenir les arêtes résiduelles $`E_{\mathrm{res}}`$.
 
-2. **Échantillonnage MCMC** :
-   Partir d'une configuration aléatoire $`\sigma^{(0)}`$. Pour chaque étape $`s`$ de 1 à $`S_{\mathrm{steps}}`$ :
+3. **Échantillonnage MCMC** :
+   Partir d'une configuration aléatoire $`\sigma^{(0)}`$ sur les variables restantes. Pour chaque étape $`s`$ de 1 à $`S_{\mathrm{steps}}`$ :
    * Appliquer la phase de gel de Swendsen-Wang pour former les clusters $`K`$.
    * Pour chaque cluster $`K_m`$ dans $`K`$, appliquer l'étape de Metropolis-Hastings avec l'énergie orientée $`U^{\mathrm{ori}}`$.
    * Stocker la configuration résultante $`\sigma^{(s)}`$.
 
-3. **Calcul de la matrice de corrélation empirique** :
-   À l'aide des configurations échantillonnées, calculer l'estimateur empirique de la matrice de covariance (corrélation spin-spin) $`\hat{\Gamma} \in \mathbb{R}^{N \times N}`$ :
+4. **Calcul de la matrice de corrélation empirique** :
+   À l'aide des configurations échantillonnées, calculer l'estimateur empirique de la matrice de covariance (corrélation spin-spin) $`\hat{\Gamma} \in \mathbb{R}^{N_{\mathrm{red}} \times N_{\mathrm{red}}}`$ (où $`N_{\mathrm{red}}`$ est le nombre de variables restantes) :
 
 ```math
 \hat{\Gamma}_{ij} = \hat{\mathbb{E}}[\sigma_i \sigma_j] - \hat{\mathbb{E}}[\sigma_i] \hat{\mathbb{E}}[\sigma_j]
@@ -209,12 +213,12 @@ L'algorithme global de résolution se déroule comme suit :
 \hat{\mathbb{E}}[f(\sigma)] = \frac{1}{S_{\text{steps}}} \sum_{s=1}^{S_{\text{steps}}} f(\sigma^{(s)})
 ```
 
-4. **Clustering Spectral Signé** :
+5. **Clustering Spectral Signé** :
    On applique un clustering spectral à deux communautés sur la matrice de corrélation $`\hat{\Gamma}`$.
-   * Définir la matrice des degrés absolus $`D \in \mathbb{R}^{N \times N}`$ :
+   * Définir la matrice des degrés absolus $`D \in \mathbb{R}^{N_{\mathrm{red}} \times N_{\mathrm{red}}}`$ :
 
 ```math
-D_{ii} = \sum_{j=1}^N |\hat{\Gamma}_{ij}|
+D_{ii} = \sum_{j=1}^{N_{\mathrm{red}}} |\hat{\Gamma}_{ij}|
 ```
 
    * Construire le Laplacien signé :
@@ -223,16 +227,16 @@ D_{ii} = \sum_{j=1}^N |\hat{\Gamma}_{ij}|
 L_{\mathrm{signed}} = D - \hat{\Gamma}
 ```
 
-   * Calculer le vecteur propre $`v_{\min} \in \mathbb{R}^N`$ correspondant à la plus petite valeur propre de $`L_{\mathrm{signed}}`$ (ou de sa version normalisée $`D^{-1/2} L_{\mathrm{signed}} D^{-1/2}`$).
-   * Déterminer la partition résultante $`\sigma^{\mathrm{spectral}}`$ dans $`\{-1, +1\}^N`$ par :
+   * Calculer le vecteur propre $`v_{\min} \in \mathbb{R}^{N_{\mathrm{red}}}`$ correspondant à la plus petite valeur propre de $`L_{\mathrm{signed}}`$ (ou de sa version normalisée $`D^{-1/2} L_{\mathrm{signed}} D^{-1/2}`$).
+   * Déterminer la partition résultante $`\sigma^{\mathrm{spectral}}`$ dans $`\{-1, +1\}^{N_{\mathrm{red}}}`$ par :
 
 ```math
 \sigma_i^{\mathrm{spectral}} = \mathrm{sign}(v_{\min, i})
 ```
 
-5. **Sélection de la configuration optimale** :
-   Puisque l'overlap est défini modulo une permutation globale ($`\sigma \leftrightarrow -\sigma`$), on évalue l'énergie 3-SAT initiale $`U(\sigma)`$ pour $`\sigma^{\mathrm{spectral}}`$ et $`-\sigma^{\mathrm{spectral}}`$.
-   On renvoie la configuration $`\sigma^*`$ minimisant cette énergie :
+6. **Sélection de la configuration optimale** :
+   Puisque l'overlap est défini modulo une permutation globale ($`\sigma \leftrightarrow -\sigma`$), on évalue l'énergie 3-SAT initiale $`U(\sigma)`$ (sur l'ensemble des clauses d'origine, en réincorporant les spins des variables fixées à l'étape 1) pour $`\sigma^{\mathrm{spectral}}`$ et $`-\sigma^{\mathrm{spectral}}`$.
+   On renvoie la configuration globale $`\sigma^*`$ minimisant cette énergie :
 
 ```math
 \sigma^* = \arg\min_{\sigma \in \{\sigma^{\mathrm{spectral}}, -\sigma^{\mathrm{spectral}}\}} U(\sigma)
