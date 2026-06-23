@@ -7,15 +7,21 @@ Ce document présente une formulation mathématique rigoureuse et précise d'un 
 ## 1. Modélisation Énergétique d'une Clause 3-SAT
 
 Soit une formule 3-SAT contenant $N$ variables $x_1, \dots, x_N$ et un ensemble de clauses $\mathcal{C}$. Chaque clause $C \in \mathcal{C}$ porte sur trois littéraux :
-$$C = \ell_{C,1} \lor \ell_{C,2} \lor \ell_{C,3}$$
+$$
+C = \ell_{C,1} \lor \ell_{C,2} \lor \ell_{C,3}
+$$
 où chaque littéral $\ell_{C,k}$ correspond à une variable sous-jacente $x_{i_k}$ ($i_k \in \{1, \dots, N\}$) sous sa forme directe ($x_{i_k}$) ou inversée ($\neg x_{i_k}$).
 
 On introduit un nœud de référence additionnel virtuel $T$ représentant l'état « Vrai » (True), dont le spin est fixé à $s_T = +1$. La configuration de spins du système est notée $\sigma \in \{-1, +1\}^N$, avec $s_i = \sigma_i$ le spin de la variable $x_i$.
 
 Pour chaque littéral $\ell_{C,k}$ ($k \in \{1, 2, 3\}$), on définit sa polarité $\eta_{C,k} \in \{-1, +1\}$ par :
-$$\eta_{C,k} = \begin{cases} +1 & \text{si } \ell_{C,k} = x_{i_k} \\ -1 & \text{si } \ell_{C,k} = \neg x_{i_k} \end{cases}$$
+$$
+\eta_{C,k} = \begin{cases} +1 & \text{si } \ell_{C,k} = x_{i_k} \\ -1 & \text{si } \ell_{C,k} = \neg x_{i_k} \end{cases}
+$$
 La valeur du littéral sous la configuration $\sigma$ est alors donnée par :
-$$L_{C,k} = \eta_{C,k} s_{i_k}$$
+$$
+L_{C,k} = \eta_{C,k} s_{i_k}
+$$
 
 L'énergie de Gibbs globale de la formule 3-SAT est donnée par :
 $$
@@ -91,9 +97,9 @@ Une fois les poids de triangles optimaux $\omega_t$ calculés, on définit :
 * Les triangles isotropes $T_{\mathrm{iso}}$ avec leurs poids $\omega_t > 0$.
 * Les poids résiduels des arêtes $W_{ij}^{\mathrm{res}}$ sur l'ensemble d'arêtes $E_{\mathrm{res}}$ :
   
-$$
-W_{ij}^{\mathrm{res}} = W_{ij} - \mathrm{sign}(W_{ij}) \sum_{t \supset \{i,j\}} \omega_t
-$$
+      $$
+      W_{ij}^{\mathrm{res}} = W_{ij} - \mathrm{sign}(W_{ij}) \sum_{t \supset \{i,j\}} \omega_t
+      $$
 
 Le Hamiltonian du système est réécrit de manière équivalente sous la forme :
 $$
@@ -115,9 +121,9 @@ On applique la dynamique de gel sur les composantes isotropes de l'énergie ($E_
 1. **Sur les arêtes résiduelles $e \in E_{\mathrm{res}}$** :
    Si l'arête $e = \{i, j\}$ est satisfaite par la configuration courante $\sigma$ (c'est-à-dire $s_i s_j \mathrm{sign}(W_e^{\mathrm{res}}) > 0$), on la gèle avec la probabilité :
    
-$$
-p_{\mathrm{gel}}(e) = 1 - e^{-|W_e^{\mathrm{res}}|}
-$$
+       $$
+       p_{\mathrm{gel}}(e) = 1 - e^{-|W_e^{\mathrm{res}}|}
+       $$
 
    Si elle n'est pas satisfaite, elle n'est pas gelée.
 
@@ -165,41 +171,41 @@ L'algorithme global de résolution se déroule comme suit :
 3. **Calcul de la matrice de corrélation empirique** :
    À l'aide des configurations échantillonnées, calculer l'estimateur empirique de la matrice de covariance (corrélation spin-spin) $\hat{\Gamma} \in \mathbb{R}^{N \times N}$ :
    
-$$
-\hat{\Gamma}_{ij} = \hat{\mathbb{E}}[\sigma_i \sigma_j] - \hat{\mathbb{E}}[\sigma_i] \hat{\mathbb{E}}[\sigma_j]
-$$
+       $$
+       \hat{\Gamma}_{ij} = \hat{\mathbb{E}}[\sigma_i \sigma_j] - \hat{\mathbb{E}}[\sigma_i] \hat{\mathbb{E}}[\sigma_j]
+       $$
 
    où :
    
-$$
-\hat{\mathbb{E}}[f(\sigma)] = \frac{1}{S_{\text{steps}}} \sum_{s=1}^{S_{\text{steps}}} f(\sigma^{(s)})
-$$
+       $$
+       \hat{\mathbb{E}}[f(\sigma)] = \frac{1}{S_{\text{steps}}} \sum_{s=1}^{S_{\text{steps}}} f(\sigma^{(s)})
+       $$
 
 4. **Clustering Spectral Signé** :
    On applique un clustering spectral à deux communautés sur la matrice de corrélation $\hat{\Gamma}$.
    * Définir la matrice des degrés absolus $D \in \mathbb{R}^{N \times N}$ :
      
-$$
-D_{ii} = \sum_{j=1}^N |\hat{\Gamma}_{ij}|
-$$
+         $$
+         D_{ii} = \sum_{j=1}^N |\hat{\Gamma}_{ij}|
+         $$
 
    * Construire le Laplacien signé :
      
-$$
-L_{\mathrm{signed}} = D - \hat{\Gamma}
-$$
+         $$
+         L_{\mathrm{signed}} = D - \hat{\Gamma}
+         $$
 
    * Calculer le vecteur propre $v_{\min} \in \mathbb{R}^N$ correspondant à la plus petite valeur propre de $L_{\mathrm{signed}}$ (ou de sa version normalisée $D^{-1/2} L_{\mathrm{signed}} D^{-1/2}$).
    * Déterminer la partition résultante $\sigma^{\mathrm{spectral}} \in \{-1, +1\}^N$ par :
      
-$$
-\sigma_i^{\mathrm{spectral}} = \mathrm{sign}(v_{\min, i})
-$$
+         $$
+         \sigma_i^{\mathrm{spectral}} = \mathrm{sign}(v_{\min, i})
+         $$
 
 5. **Sélection de la configuration optimale** :
    Puisque l'overlap est défini modulo une permutation globale ($\sigma \leftrightarrow -\sigma$), on évalue l'énergie 3-SAT initiale $U(\sigma)$ pour $\sigma^{\mathrm{spectral}}$ et $-\sigma^{\mathrm{spectral}}$.
    On renvoie la configuration $\sigma^*$ minimisant cette énergie :
    
-$$
-\sigma^* = \operatorname{argmin}_{\sigma \in \{\sigma^{\mathrm{spectral}}, -\sigma^{\mathrm{spectral}}\}} U(\sigma)
-$$
+       $$
+       \sigma^* = \operatorname{argmin}_{\sigma \in \{\sigma^{\mathrm{spectral}}, -\sigma^{\mathrm{spectral}}\}} U(\sigma)
+       $$
