@@ -185,9 +185,10 @@ où $`U^{\mathrm{ori}}(\sigma) = u \sum_{C \in \mathcal{C}} \left(1 - \mathbf{1}
 
 L'algorithme global de résolution se déroule comme suit :
 
-1. **Pré-traitement (Élimination des littéraux purs)** :
-   * Si une variable $`x_i`$ n'apparaît qu'avec une seule polarité (uniquement sous sa forme directe $`x_i`$, ou uniquement sous sa forme inversée $`\neg x_i`$), fixer son spin $`s_i`$ à la polarité correspondante pour la solution finale.
-   * Supprimer cette variable de la formule, ainsi que toutes les clauses dans lesquelles elle apparaît. Répéter cette opération de manière récursive jusqu'à ce que plus aucune variable ne présente une polarité unique.
+1. **Pré-traitement (Élimination des littéraux purs et des variables orphelines)** :
+   * Si une variable $`x_i`$ n'apparaît qu'avec une seule polarité (uniquement sous sa forme directe $`x_i`$, ou uniquement sous sa forme inversée $`\neg x_i`$), fixer son spin $`s_i`$ à la polarité correspondante pour la solution finale, et supprimer cette variable de la formule ainsi que toutes les clauses dans lesquelles elle apparaît.
+   * Si une variable n'apparaît dans aucune clause (variable orpheline), son spin est fixé arbitrairement (par exemple à $`+1`$) et elle est retirée des variables actives sans qu'aucune clause ne soit supprimée.
+   * Répéter ces opérations de manière récursive jusqu'à ce que plus aucune variable ne présente une polarité unique ou ne soit orpheline.
 
 2. **Initialisation et double transfert d'énergie** :
    * Sur la formule réduite, construire le graphe de départ en décomposant les clauses restantes en triangles contradictoires et orientés.
