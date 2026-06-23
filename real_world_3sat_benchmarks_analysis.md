@@ -10,7 +10,7 @@ Les problèmes du monde réel ne sont généralement pas modélisés sous forme 
 
 Pour les évaluer avec un résolveur 3-SAT, on utilise des transformations préservant l'équisatisfaisabilité :
 * **La Transformation de Tseitin** : Introduit des variables intermédiaires pour chaque porte d'un circuit logique, produisant des clauses de taille maximale 3 ou 4.
-* **Réduction standard CNF $\rightarrow$ 3-SAT** : Les clauses de longueur $k > 3$ sont découpées en insérant des variables auxiliaires chaînées ($k-2$ clauses de taille 3).
+* **Réduction standard CNF $`\rightarrow`$ 3-SAT** : Les clauses de longueur $`k > 3`$ sont découpées en insérant des variables auxiliaires chaînées ($`k-2`$ clauses de taille 3).
 
 > [!IMPORTANT]
 > Contrairement aux instances aléatoires, cette étape de réduction préserve la structure modulaire locale (les communautés de variables), ce qui rend le clustering spectral particulièrement efficace sur ces instances.
@@ -22,7 +22,7 @@ Pour les évaluer avec un résolveur 3-SAT, on utilise des transformations prés
 Les benchmarks applicatifs proviennent de compétitions internationales (comme la **SAT Competition**) ou de bibliothèques académiques. Les principales familles sont :
 
 ### A. Vérification de Matériel (Hardware Verification) & Bounded Model Checking (BMC)
-* **Description** : Vérification de propriétés sur des circuits séquentiels (microprocesseurs, contrôleurs). On déroule les transitions d'états sur un horizon $K$ et on traduit le circuit sous forme de formule CNF.
+* **Description** : Vérification de propriétés sur des circuits séquentiels (microprocesseurs, contrôleurs). On déroule les transitions d'états sur un horizon $`K`$ et on traduit le circuit sous forme de formule CNF.
 * **Benchmarks clés** : 
   - Les instances issues de la suite d'outils **AIGER** (utilisées dans les compétitions de Model Checking HWMCC).
   - Les circuits de benchmark **ISCAS-85** et **ISCAS-89** (miters d'équivalence logique).
@@ -70,7 +70,7 @@ Plusieurs dépôts centralisent ces instances au format standard DIMACS CNF :
 | Propriété | Random 3-SAT | Réel (Tseitin / Industrial) |
 | :--- | :--- | :--- |
 | **Graphe Variable-Clause** | Graphe biparti aléatoire (Erdős-Rényi-like) | Graphe à structure de communautés (Scale-free / Power-law) |
-| **Modularité ($Q$)** | Très faible ($Q \approx 0$) | Très élevée ($Q \ge 0.7$) |
+| **Modularité ($`Q`$)** | Très faible ($`Q \approx 0`$) | Très élevée ($`Q \ge 0.7`$) |
 | **Variables auxiliaires** | Aucune | Nombreuses (définissant les portes intermédiaires) |
 | **Efficacité du Clustering** | Inefficace (pas de partition naturelle) | **Trés efficace** (isole les composants fonctionnels du problème) |
 
