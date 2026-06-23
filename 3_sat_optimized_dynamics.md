@@ -10,7 +10,7 @@ Soit une formule 3-SAT contenant $N$ variables $x_1, \dots, x_N$ et un ensemble 
 $$C = \ell_{C,1} \lor \ell_{C,2} \lor \ell_{C,3}$$
 où chaque littéral $\ell_{C,k}$ correspond à une variable sous-jacente $x_{i_k}$ ($i_k \in \{1, \dots, N\}$) sous forme directe ($x_{i_k}$) ou inversée ($\neg x_{i_k}$).
 
-On introduit un nœud de référence additionnel virtuel $T$ représentant la Vérité, dont le spin est fixé à $s_T = +1$. La configuration de spins du système est notée $\sigma \in \{-1, +1\}^N$, avec $s_i = \sigma_i$ le spin de la variable $x_i$.
+On introduit un nœud de référence additionnel virtuel $T$ représentant l'état « Vrai » (True), dont le spin est fixé à $s_T = +1$. La configuration de spins du système est notée $\sigma \in \{-1, +1\}^N$, avec $s_i = \sigma_i$ le spin de la variable $x_i$.
 
 Pour chaque littéral $\ell_{C,k}$, on définit sa valeur $L_{C,k} \in \{-1, +1\}$ par rapport à la configuration $\sigma$ :
 $$L_{C,k} = \begin{cases} s_{i_k} & \text{si } \ell_{C,k} = x_{i_k} \\ -s_{i_k} & \text{si } \ell_{C,k} = \neg x_{i_k} \end{cases}$$
