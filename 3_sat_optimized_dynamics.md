@@ -45,28 +45,13 @@ $$
 
 
 ### 2.2. Clauses de taille 2 (Binaires : $C = \ell_1 \lor \ell_2$)
-L'indicatrice d'insatisfaction d'une clause binaire de poids $u$ s'écrit :
+L'indicatrice d'insatisfaction d'une clause binaire de poids $u$ se décompose de façon exacte, à une constante d'énergie près, en la somme d'un terme isotrope (arête non orientée) et d'un terme orienté (arête orientée) :
 
 $$
-U_{\mathrm{bin}}(\sigma) = u \cdot \mathbf{1}(L_1 = -1 \text{ et } L_2 = -1)
+u \cdot \mathbf{1}(L_1 = -1 \text{ et } L_2 = -1) = u \cdot \mathbf{1}(L_1 = L_2) + u \cdot \big(1 - \mathbf{1}(L_1 = 1 \text{ et } L_2 = 1)\big) - u
 $$
 
-Cette indicatrice se décompose de façon exacte, à une constante d'énergie près, en la somme d'un terme isotrope (arête non orientée) et d'un terme orienté (arête orientée) :
-
-$$
-\mathbf{1}(L_1 = -1 \text{ et } L_2 = -1) = \mathbf{1}(L_1 = L_2) + \big(1 - \mathbf{1}(L_1 = 1 \text{ et } L_2 = 1)\big) - 1
-$$
-
-#### Démonstration de l'équivalence d'énergie
-Pour toute configuration de littéraux $(L_1, L_2) \in \{-1, 1\}^2$ :
-1. **Cas $L_1 = L_2 = -1$ (Clause insatisfaite) :**
-   $$1 + (1 - 0) - 1 = 1 \implies \text{Énergie } u$$
-2. **Cas $L_1 = L_2 = 1$ (Clause satisfaite, les deux littéraux à Vrai) :**
-   $$1 + (1 - 1) - 1 = 0 \implies \text{Énergie } 0$$
-3. **Cas $L_1 \neq L_2$ (Clause satisfaite, un seul littéral à Vrai) :**
-   $$0 + (1 - 0) - 1 = 0 \implies \text{Énergie } 0$$
-
-L'égalité est ainsi vérifiée sur toutes les configurations possibles. À la constante d'énergie $-u$ près, la clause binaire est encodée par :
+À la constante globale $-u$ près, la clause binaire est ainsi encodée par la combinaison de :
 
 1. **Une arête non orientée (couplage quadratique isotrope)** entre $s_1$ et $s_2$ de poids $u$ et de **polarité inverse** de celle des littéraux, correspondant au terme $u \cdot \mathbf{1}(L_1 = L_2)$ :
 
@@ -81,6 +66,7 @@ $$
 $$
 I_{\mathrm{ori\_bin}}(C) = 1 - \mathbf{1}(L_1 = 1 \text{ et } L_2 = 1)
 $$
+
 
 
 
