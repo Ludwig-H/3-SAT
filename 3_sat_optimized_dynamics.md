@@ -152,13 +152,13 @@ p_{\mathrm{gel}}(e) = 1 - e^{-|W_e^{\mathrm{res}}|}
    Si elle n'est pas satisfaite, elle n'est pas gelée.
 
 2. **Sur les triangles isotropes $`t \in T_{\mathrm{iso}}`$** :
-   On applique la règle de gel locale corrélée de type Swendsen-Wang triangulaire :
-   * **Si $`t`$ est un triangle attractif** (composé de 3 arêtes de signe positif) :
-     * Si $`t`$ est satisfait par $`\sigma`$ (les 3 spins sont égaux), on gèle les 3 arêtes ensemble avec probabilité $`a_{\omega_t} = 1 - e^{-2\omega_t}`$, et aucune arête avec probabilité $`b_{\omega_t} = e^{-2\omega_t}`$.
-     * Si $`t`$ est insatisfait, on ne gèle aucune de ses arêtes.
-   * **Si $`t`$ est un triangle répulsif** (composé d'une arête de signe positif et de 2 arêtes de signe négatif) :
-     * Si $`t`$ est satisfait par $`\sigma`$ (les deux spins reliés par l'arête positive sont égaux, et différents du troisième spin), les trois arêtes sont satisfaites. On gèle alors l'une des deux arêtes de signe négatif (choisie de façon équiprobable) avec probabilité totale $`a_{\omega_t} = 1 - e^{-2\omega_t}`$ (soit $`a_{\omega_t}/2`$ pour chaque arête), et aucune arête avec probabilité $`b_{\omega_t} = e^{-2\omega_t}`$.
-     * Si $`t`$ est insatisfait, on ne gèle aucune de ses arêtes.
+   On applique la règle de gel locale corrélée de type Swendsen-Wang triangulaire. Les triangles signés sont classés en deux familles selon leur frustration locale :
+   * **Si $`t`$ est non frustré / potentiellement contradictoire** (le produit des signes de ses arêtes est $`+1`$, ce qui correspond par invariance de jauge au triangle attractif) :
+     * Si toutes ses arêtes sont satisfaites par la configuration courante $`\sigma`$, on gèle les 3 arêtes ensemble avec la probabilité $`a_{\omega_t} = 1 - e^{-2\omega_t}`$, et aucune arête avec la probabilité $`b_{\omega_t} = e^{-2\omega_t}`$.
+     * Si le triangle est insatisfait par $`\sigma`$ (au moins une arête n'est pas satisfaite), on ne gèle aucune de ses arêtes.
+   * **Si $`t`$ est frustré / intrinsèquement contradictoire** (le produit des signes de ses arêtes est $`-1`$, ce qui correspond par invariance de jauge au triangle répulsif) :
+     * Si le triangle est dans un état de basse énergie (exactement deux de ses arêtes sont satisfaites par $`\sigma`$), on gèle l'une de ces deux arêtes satisfaites (choisie de façon équiprobable) avec probabilité $`a_{\omega_t}/2`$, et aucune arête avec probabilité $`b_{\omega_t} = e^{-2\omega_t}`$.
+     * Si le triangle est dans son état de haute énergie (aucune arête n'est satisfaite par $`\sigma`$, ce qui correspond aux spins identiques sur les trois sommets), on ne gèle aucune de ses arêtes.
 
 Cette étape de gel définit une partition des variables $`V`$ en un ensemble de clusters gelés $`K = \{K_1, K_2, \dots, K_M\}`$.
 
