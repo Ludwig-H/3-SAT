@@ -6,13 +6,13 @@ Ce document présente une formulation mathématique rigoureuse et précise d'un 
 
 ## 1. Modélisation Énergétique des Clauses SAT
 
-Soit une formule SAT contenant $N$ variables $x_1, \dots, x_N$ et un ensemble de clauses $\mathcal{C}$. La configuration de spins du système est notée $\sigma \in \{-1, +1\}^N$, où le spin $s_i = \sigma_i$ correspond à la variable $x_i$ ($+1$ pour Vrai, $-1$ pour Faux).
+Soit une formule SAT contenant $N$ variables $x_1, \dots, x_N$ et un ensemble de clauses $\mathcal{C}$. La configuration de spins du système est notée $\sigma \in \lbrace -1, +1 \rbrace^N$, où le spin $s_i = \sigma_i$ correspond à la variable $x_i$ ($+1$ pour Vrai, $-1$ pour Faux).
 
-Pour chaque littéral $\ell$ d'une clause, on note $s_i$ sa variable sous-jacente et sa polarité $\eta \in \{-1, +1\}$ définie par :
+Pour chaque littéral $\ell$ d'une clause, on note $s_i$ sa variable sous-jacente et sa polarité $\eta \in \lbrace -1, +1 \rbrace$ définie par :
 $$\eta = 1 - 2 \cdot \mathbf{1}(\ell = \neg x_i)$$
 
-La valeur du littéral est $L = \eta s_i$. Une clause $C$ contenant des littéraux $L_{C,1}, \dots, L_{C,k}$ (avec $k \in \{1, 2, 3\}$) est insatisfaite si et seulement si tous ses littéraux valent $-1$. L'énergie globale du système est la somme des pénalités $u > 0$ associées aux clauses insatisfaites :
-$$U(\sigma) = u \sum_{C \in \mathcal{C}} \mathbf{1}\left(\forall j \in \{1, \dots, |C|\}, \, L_{C,j} = -1\right)$$
+La valeur du littéral est $L = \eta s_i$. Une clause $C$ contenant des littéraux $L_{C,1}, \dots, L_{C,k}$ (avec $k \in \lbrace 1, 2, 3 \rbrace$) est insatisfaite si et seulement si tous ses littéraux valent $-1$. L'énergie globale du système est la somme des pénalités $u > 0$ associées aux clauses insatisfaites :
+$$U(\sigma) = u \sum_{C \in \mathcal{C}} \mathbf{1}\left(\forall j \in \lbrace 1, \dots, |C| \rbrace, \, L_{C,j} = -1\right)$$
 
 ---
 
@@ -54,23 +54,23 @@ $$\mathbf{1}(L_1 = L_2 = L_3 = -1) = I_{\mathrm{tri}}(C) + I_{\mathrm{ori}}(C) -
 
 ### Premier Transfert : Des structures isotropes vers le graphe d'interactions
 On regroupe toutes les arêtes non orientées et les triangles contradictoires sur le graphe de couplage quadratique initial :
-1. **Contributions des 3-clauses** : Chaque triangle contradictoire $C$ sur $\{i_1, i_2, i_3\}$ est projeté sur ses trois arêtes constitutives $\{i_j, i_k\}$ avec un poids $u/2$ et une polarité de jauge :
+1. **Contributions des 3-clauses** : Chaque triangle contradictoire $C$ sur $\lbrace i_1, i_2, i_3 \rbrace$ est projeté sur ses trois arêtes constitutives $\lbrace i_j, i_k \rbrace$ avec un poids $u/2$ et une polarité de jauge :
 $$W_{i_j i_k}^{(C), \mathrm{tri}} = - \eta_{j} \eta_{k} \frac{u}{2}$$
-2. **Contributions des 2-clauses** : Chaque clause binaire $C$ sur $\{i_1, i_2\}$ ajoute directement son couplage quadratique :
+2. **Contributions des 2-clauses** : Chaque clause binaire $C$ sur $\lbrace i_1, i_2 \rbrace$ ajoute directement son couplage quadratique :
 $$W_{i_1 i_2}^{(C), \mathrm{bin}} = - \eta_{1} \eta_{2} \frac{u}{4}$$
 
-En sommant les contributions de toutes les clauses sur chaque paire de variables $\{i, j\}$, on obtient le poids d'arête global initial :
-$$W_{ij} = \sum_{C \in \mathcal{C}_3 \,:\, \{i,j\} \subset C} W_{ij}^{(C), \mathrm{tri}} + \sum_{C \in \mathcal{C}_2 \,:\, \{i,j\} = C} W_{ij}^{(C), \mathrm{bin}}$$
+En sommant les contributions de toutes les clauses sur chaque paire de variables $\lbrace i, j \rbrace$, on obtient le poids d'arête global initial :
+$$W_{ij} = \sum_{C \in \mathcal{C}_3 \,:\, \lbrace i,j \rbrace \subset C} W_{ij}^{(C), \mathrm{tri}} + \sum_{C \in \mathcal{C}_2 \,:\, \lbrace i,j \rbrace = C} W_{ij}^{(C), \mathrm{bin}}$$
 
 Les clauses de polarités opposées s'annulent mutuellement dans cette somme (compensation de la frustration).
 
 ### Second Transfert : Des arêtes vers les triangles isotropes
 On résout le programme d'optimisation linéaire (LP) pour transférer le maximum possible de l'énergie des arêtes $W_{ij}$ vers des triangles isotropes non orientés à 3 spins :
 $$\max_{\omega} \sum_{t} \omega_t$$
-sous les contraintes de poids résiduels positifs pour chaque arête $\{i, j\}$ :
-$$\sum_{t \supset \{i,j\}} \omega_t \le |W_{ij}|$$
+sous les contraintes de poids résiduels positifs pour chaque arête $\lbrace i, j \rbrace$ :
+$$\sum_{t \supset \lbrace i,j \rbrace} \omega_t \le |W_{ij}|$$
 Cela définit les poids des triangles isotropes $\omega_t \ge 0$ et le poids final des arêtes résiduelles :
-$$W_{ij}^{\mathrm{res}} = W_{ij} - \mathrm{sign}(W_{ij}) \sum_{t \supset \{i,j\}} \omega_t$$
+$$W_{ij}^{\mathrm{res}} = W_{ij} - \mathrm{sign}(W_{ij}) \sum_{t \supset \lbrace i,j \rbrace} \omega_t$$
 
 ---
 
@@ -83,13 +83,13 @@ $$U(\sigma) = U_{\mathrm{iso}}(\sigma) + U_{\mathrm{ori}}(\sigma)$$
 
 ### Étape 1 : Phase de Gel de Swendsen-Wang (Partie Isotrope)
 On forme des clusters gelés sur la partie isotrope :
-1. **Sur les arêtes résiduelles $e = \{i, j\}$** : Si elle est satisfaite ($s_i s_j \mathrm{sign}(W_e^{\mathrm{res}}) > 0$), on la gèle avec probabilité :
+1. **Sur les arêtes résiduelles $e = \lbrace i, j \rbrace$** : Si elle est satisfaite ($s_i s_j \mathrm{sign}(W_e^{\mathrm{res}}) > 0$), on la gèle avec probabilité :
 $$p_{\mathrm{gel}}(e) = 1 - e^{-|W_e^{\mathrm{res}}|}$$
 2. **Sur les triangles isotropes $t$** : On applique le gel corrélé triangulaire :
    * **Triangle attractif** : Si les 3 arêtes sont satisfaites, on les gèle ensemble avec probabilité $1 - e^{-2\omega_t}$. Sinon, on ne gèle rien.
    * **Triangle frustré** : Si le triangle est dans son état de basse énergie (2 arêtes satisfaites), on gèle l'une d'elles équiprobablement avec probabilité $\frac{1}{2}(1 - e^{-2\omega_t})$. Sinon, on ne gèle rien.
 
-Cette étape définit une partition des variables actives en clusters gelés $\{K_1, \dots, K_M\}$.
+Cette étape définit une partition des variables actives en clusters gelés $\lbrace K_1, \dots, K_M \rbrace$.
 
 ### Étape 2 : Recoloriage par Metropolis-Hastings (Partie Orientée et Champs)
 Pour chaque cluster $K_m$, on propose d'inverser globalement l'état de ses spins ($\sigma_i \leftarrow -\sigma_i$ pour tout $i \in K_m$).
