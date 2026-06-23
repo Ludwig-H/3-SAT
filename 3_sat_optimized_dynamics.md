@@ -8,11 +8,11 @@ Ce document présente une formulation mathématique rigoureuse et précise d'un 
 
 Soit une formule 3-SAT contenant $N$ variables $x_1, \dots, x_N$ et un ensemble de clauses $\mathcal{C}$. Chaque clause $C \in \mathcal{C}$ porte sur trois littéraux :
 $$C = \ell_{C,1} \lor \ell_{C,2} \lor \ell_{C,3}$$
-où chaque littéral $\ell_{C,k}$ correspond à une variable sous-jacente $x_{i_k}$ ($i_k \in \{1, \dots, N\}$) sous sa forme directe ($x_{i_k}$) ou inversée ($\neg x_{i_k}$).
+où chaque littéral $\ell_{C,k}$ correspond à une variable sous-jacente $x_{i_k}$ ($i_k \in \\{1, \dots, N\\}$) sous sa forme directe ($x_{i_k}$) ou inversée ($\neg x_{i_k}$).
 
-On introduit un nœud de référence additionnel virtuel $T$ représentant l'état « Vrai » (True), dont le spin est fixé à $s_T = +1$. La configuration de spins du système est notée $\sigma \in \{-1, +1\}^N$, avec $s_i = \sigma_i$ le spin de la variable $x_i$.
+On introduit un nœud de référence additionnel virtuel $T$ représentant l'état « Vrai » (True), dont le spin est fixé à $s_T = +1$. La configuration de spins du système est notée $\sigma \in \\{-1, +1\\}^N$, avec $s_i = \sigma_i$ le spin de la variable $x_i$.
 
-Pour chaque littéral $\ell_{C,k}$ ($k \in \{1, 2, 3\}$), on définit sa polarité $\eta_{C,k} \in \{-1, +1\}$ par :
+Pour chaque littéral $\ell_{C,k}$ ($k \in \\{1, 2, 3\\}$), on définit sa polarité $\eta_{C,k} \in \\{-1, +1\\}$ par :
 $$\eta_{C,k} = \begin{cases} +1 & \text{si } \ell_{C,k} = x_{i_k} \\ -1 & \text{si } \ell_{C,k} = \neg x_{i_k} \end{cases}$$
 La valeur du littéral sous la configuration $\sigma$ est alors donnée par :
 $$L_{C,k} = \eta_{C,k} s_{i_k}$$
@@ -27,9 +27,9 @@ où $u > 0$ est la pénalité associée à chaque clause insatisfaite.
 
 ## 2. Décomposition de l'Énergie en Structures Géométriques
 
-Pour chaque clause $C$ sur les variables $\{i_1, i_2, i_3\}$, la pénalité d'insatisfaction est décomposée géométriquement sur le tétraèdre $\{i_1, i_2, i_3, T\}$ en deux composantes distinctes :
+Pour chaque clause $C$ sur les variables $\\{i_1, i_2, i_3\\}$, la pénalité d'insatisfaction est décomposée géométriquement sur le tétraèdre $\\{i_1, i_2, i_3, T\\}$ en deux composantes distinctes :
 
-1. **Le triangle contradictoire** (base $\{i_1, i_2, i_3\}$) :
+1. **Le triangle contradictoire** (base $\\{i_1, i_2, i_3\\}$) :
    Les trois arêtes ont un signe opposé au produit des polarités des littéraux ($S_{jk} = -\eta_{C,j} \eta_{C,k}$). Ce triangle est intrinsèquement frustré. Son indicatrice d'insatisfaction vaut :
    $$
    I_{\mathrm{tri}}(C) = \mathbb{1}(L_{C,1} = L_{C,2} = L_{C,3})
@@ -61,14 +61,14 @@ où :
 ## 3. Le Double Transfert d'Énergie et l'Annulation de la Frustration
 
 ### Premier Transfert : Des Triangles Contradictoires vers les Arêtes
-Pour chaque clause $C$ sur les variables $\{i_1, i_2, i_3\}$, l'énergie du triangle contradictoire $U_C^{\mathrm{tri}}(\sigma)$ est redistribuée sur ses trois arêtes constitutives $\{i_j, i_k\}$ ($j, k \in \{1, 2, 3\}, j < k$). Chaque arête reçoit une contribution de poids $u/2$ avec le signe opposé au produit des polarités :
+Pour chaque clause $C$ sur les variables $\\{i_1, i_2, i_3\\}$, l'énergie du triangle contradictoire $U_C^{\mathrm{tri}}(\sigma)$ est redistribuée sur ses trois arêtes constitutives $\\{i_j, i_k\\}$ ($j, k \in \\{1, 2, 3\\}, j < k$). Chaque arête reçoit une contribution de poids $u/2$ avec le signe opposé au produit des polarités :
 $$
 W_{i_j i_k}^{(C)} = - \eta_{C,j} \eta_{C,k} \frac{u}{2}
 $$
 
-En sommant les contributions de toutes les clauses sur chaque paire de variables $\{i, j\}$, on obtient le poids global de l'arête :
+En sommant les contributions de toutes les clauses sur chaque paire de variables $\\{i, j\\}$, on obtient le poids global de l'arête :
 $$
-W_{ij} = \sum_{C \in \mathcal{C} \,:\, \{i,j\} \subset C} W_{ij}^{(C)}
+W_{ij} = \sum_{C \in \mathcal{C} \,:\, \\{i,j\\} \subset C} W_{ij}^{(C)}
 $$
 
 > [!NOTE]
@@ -76,23 +76,23 @@ $$
 
 ### Second Transfert : Des Arêtes vers les Triangles Isotropes
 Afin de maximiser les corrélations de gel globales, on redistribue à nouveau la plus grande fraction possible de l'énergie des arêtes $W_{ij}$ vers des triangles isotropes non orientés.
-On cherche un ensemble de poids de triangles $\omega_t \ge 0$ pour chaque triangle $t = \{a, b, c\}$ du graphe en résolvant le programme d'optimisation linéaire suivant :
+On cherche un ensemble de poids de triangles $\omega_t \ge 0$ pour chaque triangle $t = \\{a, b, c\\}$ du graphe en résolvant le programme d'optimisation linéaire suivant :
 
 $$
 \max_{\omega} \sum_{t} \omega_t
 $$
-sous les contraintes, pour chaque arête $\{i, j\}$ :
+sous les contraintes, pour chaque arête $\\{i, j\\}$ :
 $$
-\sum_{t \supset \{i,j\}} \omega_t \le |W_{ij}|
+\sum_{t \supset \\{i,j\\}} \omega_t \le |W_{ij}|
 $$
-et pour chaque triangle $t = \{a, b, c\}$, la cohérence des signes doit être respectée (le produit des signes des arêtes du triangle doit être $+1$, de sorte que le triangle soit non frustré).
+et pour chaque triangle $t = \\{a, b, c\\}$, la cohérence des signes doit être respectée (le produit des signes des arêtes du triangle doit être $+1$, de sorte que le triangle soit non frustré).
 
 Une fois les poids de triangles optimaux $\omega_t$ calculés, on définit :
 * Les triangles isotropes $T_{\mathrm{iso}}$ avec leurs poids $\omega_t > 0$.
 * Les poids résiduels des arêtes $W_{ij}^{\mathrm{res}}$ sur l'ensemble d'arêtes $E_{\mathrm{res}}$ :
   
 $$
-W_{ij}^{\mathrm{res}} = W_{ij} - \mathrm{sign}(W_{ij}) \sum_{t \supset \{i,j\}} \omega_t
+W_{ij}^{\mathrm{res}} = W_{ij} - \mathrm{sign}(W_{ij}) \sum_{t \supset \\{i,j\\}} \omega_t
 $$
 
 Le Hamiltonian du système est réécrit de manière équivalente sous la forme :
@@ -113,7 +113,7 @@ La structure hybride de l'énergie permet de construire une dynamique de transit
 ### Étape 1 : Phase de Gel de Swendsen-Wang (Partie Isotrope)
 On applique la dynamique de gel sur les composantes isotropes de l'énergie ($E_{\mathrm{res}}$ et $T_{\mathrm{iso}}$) :
 1. **Sur les arêtes résiduelles $e \in E_{\mathrm{res}}$** :
-   Si l'arête $e = \{i, j\}$ est satisfaite par la configuration courante $\sigma$ (c'est-à-dire $s_i s_j \mathrm{sign}(W_e^{\mathrm{res}}) > 0$), on la gèle avec la probabilité :
+   Si l'arête $e = \\{i, j\\}$ est satisfaite par la configuration courante $\sigma$ (c'est-à-dire $s_i s_j \mathrm{sign}(W_e^{\mathrm{res}}) > 0$), on la gèle avec la probabilité :
    
 $$
 p_{\mathrm{gel}}(e) = 1 - e^{-|W_e^{\mathrm{res}}|}
@@ -130,7 +130,7 @@ $$
      * Si $t$ est satisfait par $\sigma$ (les deux spins reliés par l'arête positive sont égaux, et différents du troisième spin), les trois arêtes sont satisfaites. On gèle alors l'une des deux arêtes de signe négatif (choisie de façon équiprobable) avec probabilité totale $a_{\omega_t} = 1 - e^{-2\omega_t}$ (soit $a_{\omega_t}/2$ pour chaque arête), et aucune arête avec probabilité $b_{\omega_t} = e^{-2\omega_t}$.
      * Si $t$ est insatisfait, on ne gèle aucune de ses arêtes.
 
-Cette étape de gel définit une partition des variables $V$ en un ensemble de clusters gelés $\mathcal{K} = \{K_1, K_2, \dots, K_M\}$.
+Cette étape de gel définit une partition des variables $V$ en un ensemble de clusters gelés $\mathcal{K} = \\{K_1, K_2, \dots, K_M\\}$.
 
 ### Étape 2 : Recoloriage par Metropolis-Hastings (Partie Orientée)
 Les clusters de variables $\mathcal{K}$ doivent être recoloriés. Puisque $K = 2$, chaque cluster $K_m$ peut être soit conservé dans son état actuel, soit inversé globalement ($s_i \leftarrow -s_i$ pour tout $i \in K_m$).
@@ -157,7 +157,7 @@ L'algorithme global de résolution se déroule comme suit :
    * Résoudre le problème d'optimisation linéaire pour transférer le maximum de poids vers les triangles isotropes $T_{\mathrm{iso}}$, et obtenir les arêtes résiduelles $E_{\mathrm{res}}$.
 
 2. **Échantillonnage MCMC** :
-   Partir d'une configuration aléatoire $\sigma^{(0)}$. Pour chaque étape $s \in \{1, \dots, S_{\text{steps}}\}$ :
+   Partir d'une configuration aléatoire $\sigma^{(0)}$. Pour chaque étape $s \in \\{1, \dots, S_{\text{steps}}\\}$ :
    * Appliquer la phase de gel de Swendsen-Wang pour former les clusters $\mathcal{K}$.
    * Pour chaque cluster $K_m \in \mathcal{K}$, appliquer l'étape de Metropolis-Hastings avec l'énergie orientée $U^{\mathrm{ori}}$.
    * Stocker la configuration résultante $\sigma^{(s)}$.
@@ -190,7 +190,7 @@ L_{\mathrm{signed}} = D - \hat{\Gamma}
 $$
 
    * Calculer le vecteur propre $v_{\min} \in \mathbb{R}^N$ correspondant à la plus petite valeur propre de $L_{\mathrm{signed}}$ (ou de sa version normalisée $D^{-1/2} L_{\mathrm{signed}} D^{-1/2}$).
-   * Déterminer la partition résultante $\sigma^{\mathrm{spectral}} \in \{-1, +1\}^N$ par :
+   * Déterminer la partition résultante $\sigma^{\mathrm{spectral}} \in \\{-1, +1\\}^N$ par :
      
 $$
 \sigma_i^{\mathrm{spectral}} = \mathrm{sign}(v_{\min, i})
@@ -201,5 +201,5 @@ $$
    On renvoie la configuration $\sigma^*$ minimisant cette énergie :
    
 $$
-\sigma^* = \operatorname{argmin}_{\sigma \in \{\sigma^{\mathrm{spectral}}, -\sigma^{\mathrm{spectral}}\}} U(\sigma)
+\sigma^* = \operatorname{argmin}_{\sigma \in \\{\sigma^{\mathrm{spectral}}, -\sigma^{\mathrm{spectral}}\\}} U(\sigma)
 $$
