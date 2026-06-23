@@ -20,13 +20,13 @@ $$U(\sigma) = u \sum_{C \in \mathcal{C}} \mathbf{1}\left(\forall j \in \{1, \dot
 
 Chaque clause est projetée sous forme de couplages (arêtes), de structures d'ordre supérieur (triangles) ou de champs locaux.
 
-### 2.1. Clauses de taille 1 (Unitaires : $C = \ell_1$)
-L'indicatrice d'insatisfaction vaut :
-$$\mathbf{1}(L_1 = -1) = \frac{1 - \eta_1 s_1}{2} = \frac{1}{2} - \frac{\eta_1}{2} s_1$$
+### 2.1. Clauses de taille 1 (Unitaires : $C = \ell_1$ avec multiplicité $m$)
+Pour $m$ occurrences de la même clause unitaire, l'indicatrice d'insatisfaction cumulée vaut :
+$$m \cdot \mathbf{1}(L_1 = -1) = m \left(\frac{1 - \eta_1 s_1}{2}\right) = \frac{m}{2} - \frac{m \eta_1}{2} s_1$$
 Elle se traduit par :
-* Un décalage constant d'énergie de $u/2$ (ignoré).
-* Un **champ magnétique local** (champ orienté) agissant sur le spin $s_1$ :
-$$h_1^{\mathrm{unit}} = \frac{u \eta_1}{2}$$
+* Un décalage constant d'énergie de $m \cdot u / 2$ (ignoré).
+* Un **champ magnétique local** (champ orienté) agissant sur le spin $s_1$ proportionnel à $m$ :
+$$h_1^{\mathrm{unit}} = m \cdot \frac{u \eta_1}{2}$$
 
 ### 2.2. Clauses de taille 2 (Binaires : $C = \ell_1 \lor \ell_2$)
 L'indicatrice d'insatisfaction vaut :
@@ -107,11 +107,11 @@ L'algorithme de résolution se déroule comme suit :
 
 1. **Pré-traitement récursif des clauses unitaires** :
    Pour chaque variable $x_i$ apparaissant dans une clause unitaire $[l]$ :
-   * On calcule son énergie sous l'assignation recommandée $l = 1$ (énergie de satisfaction de la clause unitaire).
-   * On identifie l'ensemble des clauses $C_{\mathrm{opp}}$ dans lesquelles $x_i$ apparaît sous sa forme inversée $\neg l$.
-   * **Condition d'assignation forcée** : Si $1 > |C_{\mathrm{opp}}|$, alors l'assignation de force $l=1$ garantit une amélioration stricte de l'énergie minimale dans le pire des cas.
-     * Si cette condition est satisfaite, on assigne de force le spin à sa valeur satisfaisante, on supprime la variable et ses clauses satisfaites, on raccourcit les autres et on recommence récursivement (propagation unitaire).
-     * Si la condition n'est pas satisfaite, on n'assigne pas la variable. La clause unitaire est conservée et sera encodée sous la forme d'un champ magnétique local $h_i^{\mathrm{unit}}$ lors de l'initialisation du solveur.
+    * On calcule son énergie sous l'assignation recommandée $l = 1$ (bénéfice d'énergie de $m \cdot u$, où $m$ est la multiplicité de cette clause unitaire).
+    * On identifie l'ensemble des clauses $C_{\mathrm{opp}}$ dans lesquelles $x_i$ apparaît sous sa forme inversée $\neg l$. Soit $k = |C_{\mathrm{opp}}|$ le nombre total de ces clauses.
+    * **Condition d'assignation forcée** : Si $m > k$, alors l'assignation de force $l=1$ garantit une amélioration stricte de l'énergie minimale dans le pire des cas (bénéfice d'énergie minimal de $(m - k) \cdot u > 0$).
+      * Si cette condition est satisfaite, on assigne de force le spin à sa valeur satisfaisante, on supprime la variable et ses clauses satisfaites, on raccourcit les autres et on recommence récursivement (propagation unitaire).
+      * Si la condition n'est pas satisfaite, on n'assigne pas la variable. La clause unitaire est conservée et sera encodée sous la forme d'un champ magnétique local $h_i^{\mathrm{unit}}$ d'amplitude proportionnelle à sa multiplicité $m$ lors de l'initialisation du solveur.
 
 2. **Élimination des littéraux purs et des variables orphelines** :
    On applique la réduction habituelle des littéraux purs sur le reste des variables et des clauses de manière récursive.
