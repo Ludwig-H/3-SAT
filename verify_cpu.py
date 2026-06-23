@@ -995,10 +995,24 @@ def solve_3sat_with_gpu_cluster_dynamics(num_vars, clauses, steps=1000, burn_in=
     unsat2 = evaluate_3sat_energy(cand2, clauses)
     
     best_spins = cand1 if unsat1 < unsat2 else cand2
-    if verbose:
-        print(f"[Orchestration] Sélection terminée. Candidat 1 (unsat={unsat1}) | Candidat 2 (unsat={unsat2}).")
-    t_elapsed = time.time() - t_start
     
+    # 8. Post-traitement de raffinement local (WalkSAT guidé par le spectral)
+    unsat_before = min(unsat1, unsat2)
+    if unsat_before > 0:
+        if verbose:
+            print(f"[Orchestration] Lancement du post-traitement WalkSAT pour corriger les {unsat_before} clauses insatisfaites...")
+        refined_spins, unsat_after = solve_maxsat_walksat(
+            num_vars, clauses, max_flips=20000, p=0.3, max_time=2.0, verbose=False, init_spins=best_spins
+        )
+        if unsat_after < unsat_before:
+            best_spins = refined_spins
+            if verbose:
+                print(f"[Orchestration] Post-traitement terminé. Clauses insatisfaites : {unsat_before} -> {unsat_after}")
+        else:
+            if verbose:
+                print("[Orchestration] Le post-traitement n'a pas pu améliorer l'énergie spectrale.")
+                
+    t_elapsed = time.time() - t_start
     return best_spins, t_elapsed, energy_history, giant_history
 
 
@@ -1014,11 +1028,16 @@ def solve_3sat_with_gpu_cluster_dynamics(num_vars, clauses, steps=1000, burn_in=
 # ==========================================
 from pysat.solvers import Glucose4
 
-def solve_maxsat_walksat(num_vars, clauses, max_flips=150000, p=0.3, max_time=5.0, verbose=True):
+def solve_maxsat_walksat(num_vars, clauses, max_flips=150000, p=0.3, max_time=5.0, verbose=True, init_spins=None):
     t_start = time.time()
     if verbose:
         print(f"  [CPU WalkSAT] Lancement avec {num_vars} variables actives et {len(clauses)} clauses actives...")
-    spins = np.random.choice([-1, 1], size=num_vars + 1)
+    if init_spins is not None:
+        spins = np.zeros(num_vars + 1, dtype=int)
+        for v in range(1, num_vars + 1):
+            spins[v] = init_spins.get(v, random.choice([-1, 1]))
+    else:
+        spins = np.random.choice([-1, 1], size=num_vars + 1)
     
     pos_clauses = [[] for _ in range(num_vars + 1)]
     neg_clauses = [[] for _ in range(num_vars + 1)]
