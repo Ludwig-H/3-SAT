@@ -158,7 +158,7 @@ p_{\mathrm{gel}}(e) = 1 - e^{-|W_e^{\mathrm{res}}|}
      * Si le triangle est insatisfait par $`\sigma`$ (au moins une arête n'est pas satisfaite), on ne gèle aucune de ses arêtes.
    * **Si $`t`$ est frustré / intrinsèquement contradictoire** (le produit des signes de ses arêtes est $`-1`$, ce qui correspond par invariance de jauge au triangle répulsif) :
      * Si le triangle est dans un état de basse énergie (exactement deux de ses arêtes sont satisfaites par $`\sigma`$), on gèle l'une de ces deux arêtes satisfaites (choisie de façon équiprobable) avec probabilité $`a_{\omega_t}/2`$, et aucune arête avec probabilité $`b_{\omega_t} = e^{-2\omega_t}`$.
-     * Si le triangle est dans son état de haute énergie (aucune arête n'est satisfaite par $`\sigma`$, ce qui correspond aux spins identiques sur les trois sommets), on ne gèle aucune de ses arêtes.
+     * Si le triangle est dans son état de haute énergie (aucune arête n'est satisfaite par $`\sigma`$), on ne gèle aucune de ses arêtes.
 
 Cette étape de gel définit une partition des variables $`V`$ en un ensemble de clusters gelés $`K = \{K_1, K_2, \dots, K_M\}`$.
 
