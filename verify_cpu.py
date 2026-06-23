@@ -908,9 +908,9 @@ class GPUPartialClusterDynamicsSolver:
                     flip_mask = torch.isin(cluster_indices, accepted_clusters)
                     spins[flip_mask] = spins_cand[flip_mask]
                     
-                    if num_clause3 > 0:
+                    if num_clause3 > 0 and has_var_in_class.any():
                         clause3_all_true = torch.where(has_var_in_class & torch.isin(affected_cluster, accepted_clusters), clause3_all_true_cand, clause3_all_true)
-                    if num_clause2 > 0:
+                    if num_clause2 > 0 and has_var_in_class_2.any():
                         clause2_all_true = torch.where(has_var_in_class_2 & torch.isin(affected_cluster_2, accepted_clusters), clause2_all_true_cand, clause2_all_true)
             
             self.energy_history.append(self.compute_total_unsat_clauses(spins))
