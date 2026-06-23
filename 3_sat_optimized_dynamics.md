@@ -192,7 +192,7 @@ L'algorithme de résolution se déroule comme suit :
    Pour chaque variable $x_i$ apparaissant dans une clause unitaire $[l]$ :
     * On calcule son énergie sous l'assignation recommandée $l = 1$ (bénéfice d'énergie de $m \cdot u$, où $m$ est la multiplicité de cette clause unitaire).
     * On identifie l'ensemble des clauses $C_{\mathrm{opp}}$ dans lesquelles $x_i$ apparaît sous sa forme inversée $\neg l$. Soit $k = |C_{\mathrm{opp}}|$ le nombre total de ces clauses.
-    * **Condition d'assignation forcée** : Si $m > k$, alors l'assignation de force $l=1$ garantit une amélioration stricte de l'énergie minimale dans le pire des cas (bénéfice d'énergie minimal de $(m - k) \cdot u > 0$).
+    * **Condition d'assignation forcée** : Si $m \ge k$, alors l'assignation de force $l=1$ garantit que l'énergie de la nouvelle configuration sera inférieure ou égale à celle de l'ancienne configuration (bénéfice d'énergie minimal de $(m - k) \cdot u \ge 0$). Cela préserve au moins un minimum global de l'énergie et permet d'assigner la variable sans perte d'optimalité.
       * Si cette condition est satisfaite, on assigne de force le spin à sa valeur satisfaisante, on supprime la variable et ses clauses satisfaites, on raccourcit les autres et on recommence récursivement (propagation unitaire).
       * Si la condition n'est pas satisfaite, on n'assigne pas la variable. La clause unitaire est conservée et sera encodée sous la forme d'un champ magnétique local $h_i^{\mathrm{unit}}$ d'amplitude proportionnelle à sa multiplicité $m$ lors de l'initialisation du solveur.
 
