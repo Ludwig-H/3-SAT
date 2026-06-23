@@ -235,5 +235,5 @@ L_{\mathrm{signed}} = D - \hat{\Gamma}
    On renvoie la configuration $`\sigma^*`$ minimisant cette énergie :
 
 ```math
-\sigma^* = \operatorname{argmin}_{\sigma \in \{\sigma^{\mathrm{spectral}}, -\sigma^{\mathrm{spectral}}\}} U(\sigma)
+\sigma^* = \arg\min_{\sigma \in \{\sigma^{\mathrm{spectral}}, -\sigma^{\mathrm{spectral}}\}} U(\sigma)
 ```
