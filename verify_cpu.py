@@ -243,13 +243,20 @@ def recursive_unit_propagation_and_reductions(num_vars, clauses, verbose=True):
     fixed_literals = {}
     active_clauses = [list(c) for c in clauses]
     active_vars = set(range(1, num_vars + 1))
+    fixed_empty_clauses = 0
     
     changed = True
     while changed:
         changed = False
         
-        # Éliminer les clauses vides de façon robuste
-        active_clauses = [c for c in active_clauses if len(c) > 0]
+        # Les clauses vides ne sont pas resolues: elles correspondent a une
+        # contribution constante +u au Hamiltonien apres les fixations deja faites.
+        empty_clauses = sum(1 for c in active_clauses if len(c) == 0)
+        if empty_clauses:
+            fixed_empty_clauses += empty_clauses
+            if verbose:
+                print(f"  -> {empty_clauses} clause(s) vide(s) retiree(s) des clauses actives : contribution constante +{empty_clauses} * u au Hamiltonien.")
+            active_clauses = [c for c in active_clauses if len(c) > 0]
         
         # Détection et comptage des clauses unitaires actives
         unit_counts = {}
@@ -371,6 +378,8 @@ def recursive_unit_propagation_and_reductions(num_vars, clauses, verbose=True):
             
     if verbose:
         print(f"  -> Prétraitement terminé : {len(active_vars)} variables actives, {len(active_clauses)} clauses actives (fixées : {len(fixed_literals)}).")
+        if fixed_empty_clauses > 0:
+            print(f"  -> Clauses vides cumulées : {fixed_empty_clauses}. Incidence énergétique : +{fixed_empty_clauses} * u, constante pour le Hamiltonien réduit.")
     return active_vars, active_clauses, fixed_literals
 
 def perform_double_energy_transfer(active_vars, active_clauses, u=1.0, verbose=True):
@@ -582,14 +591,17 @@ class GPUPartialClusterDynamicsSolver:
         energy3 = 0.0
         if self.clause3_vars.shape[0] > 0:
             lit_vals = self.clause3_pols * spins[self.clause3_vars]
-            satisfied = (lit_vals == 1.0).any(dim=1)
-            energy3 = self.u * (~satisfied).sum()
+            # Correction: U_ori n'est pas l'énergie SAT brute. Après le transfert
+            # isotrope, le terme oriente vaut 1 - 1(tous les litteraux sont vrais).
+            all_literals_true = (lit_vals == 1.0).all(dim=1)
+            energy3 = self.u * (~all_literals_true).sum()
             
         energy2 = 0.0
         if self.clause2_vars.shape[0] > 0:
             lit_vals = self.clause2_pols * spins[self.clause2_vars]
-            satisfied = (lit_vals == 1.0).any(dim=1)
-            energy2 = self.u * (~satisfied).sum()
+            # Meme correction pour les clauses binaires: I_ori_bin = 1 - 1(L1=L2=1).
+            all_literals_true = (lit_vals == 1.0).all(dim=1)
+            energy2 = self.u * (~all_literals_true).sum()
             
         energy_fields = - (self.h_tot * spins).sum()
         
@@ -608,12 +620,14 @@ class GPUPartialClusterDynamicsSolver:
         # 2-clauses
         if self.clause2_vars.shape[0] > 0:
             lit_vals = self.clause2_pols * spins[self.clause2_vars]
+            # Ici on mesure l'energie SAT reelle pour le logging, donc any() est correct.
             satisfied = (lit_vals == 1.0).any(dim=1)
             unsat += (~satisfied).sum().item()
             
         # 3-clauses
         if self.clause3_vars.shape[0] > 0:
             lit_vals = self.clause3_pols * spins[self.clause3_vars]
+            # Ici on mesure l'energie SAT reelle pour le logging, donc any() est correct.
             satisfied = (lit_vals == 1.0).any(dim=1)
             unsat += (~satisfied).sum().item()
             
@@ -829,8 +843,10 @@ class GPUPartialClusterDynamicsSolver:
             clause3_clusters = cluster_indices[self.clause3_vars] if num_clause3 > 0 else torch.zeros((0, 3), dtype=torch.long, device=device)
             clause2_clusters = cluster_indices[self.clause2_vars] if num_clause2 > 0 else torch.zeros((0, 2), dtype=torch.long, device=device)
             
-            clause3_sat = (self.clause3_pols * spins[self.clause3_vars] == 1.0).any(dim=1) if num_clause3 > 0 else torch.zeros(0, dtype=torch.bool, device=device)
-            clause2_sat = (self.clause2_pols * spins[self.clause2_vars] == 1.0).any(dim=1) if num_clause2 > 0 else torch.zeros(0, dtype=torch.bool, device=device)
+            # Correction: Metropolis-Hastings doit utiliser U_ori, pas l'energie SAT brute.
+            # Pour les clauses 2/3, U_ori = u * (1 - 1(tous les litteraux sont vrais)).
+            clause3_all_true = (self.clause3_pols * spins[self.clause3_vars] == 1.0).all(dim=1) if num_clause3 > 0 else torch.zeros(0, dtype=torch.bool, device=device)
+            clause2_all_true = (self.clause2_pols * spins[self.clause2_vars] == 1.0).all(dim=1) if num_clause2 > 0 else torch.zeros(0, dtype=torch.bool, device=device)
             
             for iter_mis in range(num_mis_iterations):
                 w = torch.rand(M, device=device)
@@ -858,24 +874,24 @@ class GPUPartialClusterDynamicsSolver:
                     clause3_in_class = in_class[self.clause3_vars]
                     has_var_in_class = clause3_in_class.any(dim=1)
                     if has_var_in_class.any():
-                        clause3_sat_cand = clause3_sat.clone()
-                        clause3_sat_cand[has_var_in_class] = (self.clause3_pols[has_var_in_class] * spins_cand[self.clause3_vars[has_var_in_class]] == 1.0).any(dim=1)
+                        clause3_all_true_cand = clause3_all_true.clone()
+                        clause3_all_true_cand[has_var_in_class] = (self.clause3_pols[has_var_in_class] * spins_cand[self.clause3_vars[has_var_in_class]] == 1.0).all(dim=1)
                         
                         var_idx_in_clause = clause3_in_class.float().argmax(dim=1)
                         affected_cluster = clause3_clusters[torch.arange(num_clause3, device=device), var_idx_in_clause]
-                        delta_E_clauses3 = self.u * (clause3_sat.float() - clause3_sat_cand.float())
+                        delta_E_clauses3 = self.u * (clause3_all_true.float() - clause3_all_true_cand.float())
                         delta_E_cluster.scatter_add_(0, affected_cluster[has_var_in_class], delta_E_clauses3[has_var_in_class])
                         
                 if num_clause2 > 0:
                     clause2_in_class = in_class[self.clause2_vars]
                     has_var_in_class_2 = clause2_in_class.any(dim=1)
                     if has_var_in_class_2.any():
-                        clause2_sat_cand = clause2_sat.clone()
-                        clause2_sat_cand[has_var_in_class_2] = (self.clause2_pols[has_var_in_class_2] * spins_cand[self.clause2_vars[has_var_in_class_2]] == 1.0).any(dim=1)
+                        clause2_all_true_cand = clause2_all_true.clone()
+                        clause2_all_true_cand[has_var_in_class_2] = (self.clause2_pols[has_var_in_class_2] * spins_cand[self.clause2_vars[has_var_in_class_2]] == 1.0).all(dim=1)
                         
                         var_idx_in_clause_2 = clause2_in_class.float().argmax(dim=1)
                         affected_cluster_2 = clause2_clusters[torch.arange(num_clause2, device=device), var_idx_in_clause_2]
-                        delta_E_clauses2 = self.u * (clause2_sat.float() - clause2_sat_cand.float())
+                        delta_E_clauses2 = self.u * (clause2_all_true.float() - clause2_all_true_cand.float())
                         delta_E_cluster.scatter_add_(0, affected_cluster_2[has_var_in_class_2], delta_E_clauses2[has_var_in_class_2])
                         
                 delta_E_fields = torch.zeros(M, device=device)
@@ -893,9 +909,9 @@ class GPUPartialClusterDynamicsSolver:
                     spins[flip_mask] = spins_cand[flip_mask]
                     
                     if num_clause3 > 0:
-                        clause3_sat = torch.where(has_var_in_class & torch.isin(affected_cluster, accepted_clusters), clause3_sat_cand, clause3_sat)
+                        clause3_all_true = torch.where(has_var_in_class & torch.isin(affected_cluster, accepted_clusters), clause3_all_true_cand, clause3_all_true)
                     if num_clause2 > 0:
-                        clause2_sat = torch.where(has_var_in_class_2 & torch.isin(affected_cluster_2, accepted_clusters), clause2_sat_cand, clause2_sat)
+                        clause2_all_true = torch.where(has_var_in_class_2 & torch.isin(affected_cluster_2, accepted_clusters), clause2_all_true_cand, clause2_all_true)
             
             self.energy_history.append(self.compute_total_unsat_clauses(spins))
             

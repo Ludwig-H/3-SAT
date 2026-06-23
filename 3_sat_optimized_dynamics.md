@@ -182,6 +182,8 @@ $$
 
 avec $h_i^{\mathrm{tot}} = \sum_{C \in \mathcal{C}_1} h_i^{(C), \mathrm{unit}}$ la somme de tous les champs magnétiques orientés des clauses unitaires s'appliquant sur la variable $x_i$.
 
+> **Note d'implémentation importante :** dans l'étape Metropolis-Hastings, on doit évaluer la variation de $U_{\mathrm{ori}}$ ci-dessus, et non l'énergie SAT brute $\mathbf{1}(\text{clause insatisfaite})$. Pour une clause binaire ou ternaire, cela signifie tester si **tous** les littéraux sont vrais (`all`), puisque $I_{\mathrm{ori\_bin}} = 1 - \mathbf{1}(L_1=L_2=1)$ et $I_{\mathrm{ori}} = 1 - \mathbf{1}(L_1=L_2=L_3=1)$. Le test `any` reste uniquement adapté au comptage final ou au logging des clauses réellement insatisfaites.
+
 ---
 
 ## 5. Description Algorithmique Complète
@@ -195,6 +197,7 @@ L'algorithme de résolution se déroule comme suit :
     * **Condition d'assignation forcée** : Si $m \ge k$, alors l'assignation de force $l=1$ garantit que l'énergie de la nouvelle configuration sera inférieure ou égale à celle de l'ancienne configuration (bénéfice d'énergie minimal de $(m - k) \cdot u \ge 0$). Cela préserve au moins un minimum global de l'énergie et permet d'assigner la variable sans perte d'optimalité.
       * Si cette condition est satisfaite, on assigne de force le spin à sa valeur satisfaisante, on supprime la variable et ses clauses satisfaites, on raccourcit les autres et on recommence récursivement (propagation unitaire).
       * Si la condition n'est pas satisfaite, on n'assigne pas la variable. La clause unitaire est conservée et sera encodée sous la forme d'un champ magnétique local $h_i^{\mathrm{unit}}$ d'amplitude proportionnelle à sa multiplicité $m$ lors de l'initialisation du solveur.
+    * Si un raccourcissement produit une clause vide, celle-ci n'est pas considérée comme résolue : elle représente une contribution constante $+u$ au Hamiltonien réduit, car toutes ses variables ont déjà été fixées de manière défavorable pour cette clause. L'implémentation doit donc la retirer des clauses actives seulement après l'avoir comptée et, en mode verbose, indiquer le nombre cumulé de clauses vides ainsi que l'incidence énergétique $+(\#\text{clauses vides})u$.
 
 2. **Élimination des littéraux purs et des variables orphelines** :
    On applique la réduction habituelle des littéraux purs sur le reste des variables et des clauses de manière récursive.
@@ -205,7 +208,7 @@ L'algorithme de résolution se déroule comme suit :
    * Résolution du LP pour transférer le maximum possible de $W_{ij}$ vers les triangles isotropes $T_{\mathrm{iso}}$ et obtenir $W_{ij}^{\mathrm{res}}$.
 
 4. **Échantillonnage MCMC Hybride** :
-   Sur les spins actifs, exécuter les cycles de gel de Swendsen-Wang (partie isotrope et quadratique) suivis des inversions de clusters Metropolis-Hastings acceptées selon $U_{\mathrm{ori}}$ (partie orientée et champs totaux).
+   Sur les spins actifs, exécuter les cycles de gel de Swendsen-Wang (partie isotrope et quadratique) suivis des inversions de clusters Metropolis-Hastings acceptées selon $U_{\mathrm{ori}}$ (partie orientée et champs totaux). Les deltas Metropolis-Hastings des clauses 2 et 3 doivent donc être calculés avec les indicateurs "tous les littéraux sont vrais", pas avec l'indicateur "au moins un littéral est vrai".
 
 5. **Clustering Spectral Signé** :
    Calcul de la matrice d'espérance $\mathbb E[\sigma_i \sigma_j]$ sur les étapes échantillonnées post-burn-in, construction du Laplacien signé $L_{\mathrm{signed}} = D - \mathbb E[\sigma \sigma^T]$, et partition spectrale basée sur le signe du vecteur propre de plus petite valeur propre.
