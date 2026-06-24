@@ -142,9 +142,33 @@ def recursive_unit_propagation_and_reductions(num_vars, clauses, active_vars=Non
             
     return active_vars, active_clauses, fixed_literals, fixed_empty_clauses
 
+def normalize_and_clean_clauses(clauses):
+    """
+    Normalizes a list of clauses by removing duplicate literals,
+    removing tautologies, and sorting literals for canonical representation.
+    """
+    cleaned_clauses = []
+    for c in clauses:
+        seen = set()
+        new_c = []
+        tautology = False
+        for lit in c:
+            if lit in seen:
+                continue
+            if -lit in seen:
+                tautology = True
+                break
+            seen.add(lit)
+            new_c.append(lit)
+        if not tautology:
+            new_c.sort(key=lambda x: abs(x))
+            cleaned_clauses.append(new_c)
+    return cleaned_clauses
+
 def build_signed_graph_for_3sat(num_vars, active_vars, active_clauses, u=1.0, verbose=False):
     """
     Builds the extended signed graph. Merges auxiliary nodes sharing the same canonical pair.
+    Returns A (dict-of-dicts sparse representation), var_to_idx, clause3_list, clause_to_merged_idx, total_nodes.
     """
     var_list = sorted(list(active_vars))
     var_to_idx = {v: i + 1 for i, v in enumerate(var_list)}
@@ -236,48 +260,51 @@ def build_signed_graph_for_3sat(num_vars, active_vars, active_clauses, u=1.0, ve
             clause3_counter += 1
             
     total_nodes = N_red + 1 + n_merged_nodes
-    A = np.zeros((total_nodes, total_nodes), dtype=np.float32)
+    # Initialize A as a sparse dict-of-dicts pre-populated with empty dicts for each node
+    A = {i: {} for i in range(total_nodes)}
     for u_node, v_node, weight, sign in edges:
         val = sign * weight
-        A[u_node, v_node] += val
-        A[v_node, u_node] += val
-    return A, var_to_idx, clause3_list, clause_to_merged_idx
+        A[u_node][v_node] = A[u_node].get(v_node, 0.0) + val
+        A[v_node][u_node] = A[v_node].get(u_node, 0.0) + val
+    return A, var_to_idx, clause3_list, clause_to_merged_idx, total_nodes
 
-def find_triangles(A):
+def find_triangles(A, total_nodes):
     """
     Finds all unique triangles (i < j < k) in the graph with non-zero edge weights.
     """
-    N = A.shape[0]
-    adj_sets = [set(np.where(A[r] != 0)[0]) for r in range(N)]
+    adj_sets = {}
+    for u in range(total_nodes):
+        adj_sets[u] = {v for v, w in A[u].items() if abs(w) > 1e-9}
+        
     triangles = []
-    for u in range(N):
-        neighbors_u = np.where(A[u] != 0)[0]
-        neighbors_u = neighbors_u[neighbors_u > u]
-        for v in neighbors_u:
-            common = adj_sets[u].intersection(adj_sets[v])
+    for u in range(total_nodes):
+        neighbors_u = adj_sets[u]
+        # Only check neighbors v > u
+        neighbors_u_gt = [v for v in neighbors_u if v > u]
+        for v in neighbors_u_gt:
+            common = neighbors_u.intersection(adj_sets[v])
             for w in common:
                 if w > v:
                     triangles.append((u, v, w))
     return triangles
 
-def transfer_weights_to_triangles(A, triangles):
+def transfer_weights_to_triangles(A, triangles, total_nodes):
     """
     Formulates and solves the LP weight transfer to maximize triangle weights.
     Uses sparse matrix for the constraints to prevent memory issues.
     """
-    N = A.shape[0]
     edges_list = []
     edge_to_idx = {}
-    for u in range(N):
-        for v in range(u + 1, N):
-            if A[u, v] != 0:
+    for u in range(total_nodes):
+        for v in A[u]:
+            if v > u and abs(A[u][v]) > 1e-9:
                 idx = len(edges_list)
                 edges_list.append((u, v))
                 edge_to_idx[(u, v)] = idx
                 
     Ne = len(edges_list)
     Nt = len(triangles)
-    W = np.array([abs(A[u, v]) for u, v in edges_list], dtype=np.float64)
+    W = np.array([abs(A[u][v]) for u, v in edges_list], dtype=np.float64)
     
     if Nt == 0:
         return np.zeros(0), W, edges_list, edge_to_idx
@@ -349,7 +376,7 @@ def union(i, j, parent):
     if root_i != root_j:
         parent[root_i] = root_j
 
-def build_reduced_problem(clauses, full_sigma, parent, pinned_root, var_to_idx):
+def build_reduced_problem(clauses, full_sigma, parent, pinned_root, var_to_idx, root_to_idx):
     """
     Reduces the original SAT clauses to constraint clauses over the flippable cluster variables.
     """
@@ -367,7 +394,7 @@ def build_reduced_problem(clauses, full_sigma, parent, pinned_root, var_to_idx):
             else:
                 c_root = pinned_root
                 
-            if c_root == pinned_root:
+            if c_root == pinned_root or c_root not in root_to_idx:
                 if L_0 == 1:
                     trivially_satisfied = True
                     break
@@ -427,7 +454,7 @@ def solve_reduced_exhaustive(reduced_clauses, m, root_to_idx):
     best_z = np.array([1 if not (best_i & (1 << j)) else -1 for j in range(m)], dtype=int)
     return best_z
 
-def solve_reduced_walksat(reduced_clauses, m, root_to_idx, max_flips=1500, p_noise=0.15):
+def solve_reduced_walksat(reduced_clauses, m, root_to_idx, max_flips=None, p_noise=0.15):
     """
     WalkSAT on the cluster flip variables, targeting minimal unsatisfied reduced clauses.
     """
@@ -457,6 +484,9 @@ def solve_reduced_walksat(reduced_clauses, m, root_to_idx, max_flips=1500, p_noi
     
     if best_unsat == 0:
         return best_z
+        
+    if max_flips is None:
+        max_flips = max(1500, 15 * best_unsat)
         
     for flip in range(max_flips):
         if not unsat_list:
@@ -593,6 +623,164 @@ def count_unsat_clauses(spins, clauses):
             unsat_count += 1
     return unsat_count
 
+def perform_gel_and_get_clusters_torch(beta, sigma_torch, device_obj, Ne, Nt_active, edges_src, edges_dst, epsilon_edges_torch, rho_torch, t_eps1, t_eps2, t_eps3, t_e1_src, t_e1_dst, t_e2_src, t_e2_dst, t_e3_src, t_e3_dst, t_omega, t_pt, total_nodes, N_red):
+    frozen_edges_src = []
+    frozen_edges_dst = []
+    n_frozen_residuals = 0
+    n_frozen_triangles = 0
+    
+    # 1. Gel of residual edges
+    if Ne > 0:
+        y = epsilon_edges_torch * sigma_torch[edges_src] * sigma_torch[edges_dst]
+        probs = 1.0 - torch.exp(-beta * rho_torch)
+        freeze_mask = (y == 1.0) & (torch.rand(Ne, device=device_obj) < probs)
+        
+        frozen_edges_src.append(edges_src[freeze_mask])
+        frozen_edges_dst.append(edges_dst[freeze_mask])
+        n_frozen_residuals = int(torch.sum(freeze_mask).item())
+        
+    # 2. Gel of triangles
+    if Nt_active > 0:
+        y1 = t_eps1 * sigma_torch[t_e1_src] * sigma_torch[t_e1_dst]
+        y2 = t_eps2 * sigma_torch[t_e2_src] * sigma_torch[t_e2_dst]
+        y3 = t_eps3 * sigma_torch[t_e3_src] * sigma_torch[t_e3_dst]
+        
+        # Non-frustrated
+        satisfied_nf = (t_pt == 1.0) & (y1 == 1.0) & (y2 == 1.0) & (y3 == 1.0) & (t_omega >= 1e-9)
+        probs_nf = 1.0 - torch.exp(-2.0 * beta * t_omega)
+        freeze_nf = satisfied_nf & (torch.rand(Nt_active, device=device_obj) < probs_nf)
+        
+        frozen_edges_src.extend([t_e1_src[freeze_nf], t_e2_src[freeze_nf], t_e3_src[freeze_nf]])
+        frozen_edges_dst.extend([t_e1_dst[freeze_nf], t_e2_dst[freeze_nf], t_e3_dst[freeze_nf]])
+        n_frozen_triangles += int(torch.sum(freeze_nf).item()) * 3
+        
+        # Frustrated
+        sat_count = (y1 == 1.0).float() + (y2 == 1.0).float() + (y3 == 1.0).float()
+        state_bas = (t_pt == -1.0) & (sat_count == 2.0) & (t_omega >= 1e-9)
+        probs_f = 1.0 - torch.exp(-2.0 * beta * t_omega)
+        freeze_f = state_bas & (torch.rand(Nt_active, device=device_obj) < probs_f)
+        
+        r = torch.rand(Nt_active, device=device_obj)
+        
+        # Case A
+        mask_A = freeze_f & (y1 == 1.0) & (y2 == 1.0)
+        src_A = torch.where(r < 0.5, t_e1_src, t_e2_src)
+        dst_A = torch.where(r < 0.5, t_e1_dst, t_e2_dst)
+        frozen_edges_src.append(src_A[mask_A])
+        frozen_edges_dst.append(dst_A[mask_A])
+        n_frozen_triangles += int(torch.sum(mask_A).item())
+        
+        # Case B
+        mask_B = freeze_f & (y2 == 1.0) & (y3 == 1.0)
+        src_B = torch.where(r < 0.5, t_e2_src, t_e3_src)
+        dst_B = torch.where(r < 0.5, t_e2_dst, t_e3_dst)
+        frozen_edges_src.append(src_B[mask_B])
+        frozen_edges_dst.append(dst_B[mask_B])
+        n_frozen_triangles += int(torch.sum(mask_B).item())
+        
+        # Case C
+        mask_C = freeze_f & (y1 == 1.0) & (y3 == 1.0)
+        src_C = torch.where(r < 0.5, t_e1_src, t_e3_src)
+        dst_C = torch.where(r < 0.5, t_e1_dst, t_e3_dst)
+        frozen_edges_src.append(src_C[mask_C])
+        frozen_edges_dst.append(dst_C[mask_C])
+        n_frozen_triangles += int(torch.sum(mask_C).item())
+        
+    if frozen_edges_src:
+        src_all = torch.cat(frozen_edges_src)
+        dst_all = torch.cat(frozen_edges_dst)
+        n_frozen_total = src_all.numel()
+    else:
+        src_all = torch.zeros(0, dtype=torch.long, device=device_obj)
+        dst_all = torch.zeros(0, dtype=torch.long, device=device_obj)
+        n_frozen_total = 0
+        
+    # 3. Construct clusters (Label Propagation in PyTorch)
+    parent_arr = np.arange(total_nodes)
+    if src_all.numel() > 0:
+        sym_src = torch.cat([src_all, dst_all])
+        sym_dst = torch.cat([dst_all, src_all])
+        
+        labels = torch.arange(total_nodes, device=device_obj)
+        for _ in range(100):
+            labels_next = torch.scatter_reduce(labels, 0, sym_dst, labels[sym_src], reduce='amax', include_self=True)
+            if torch.equal(labels, labels_next):
+                break
+            labels = labels_next
+        parent_arr = labels.cpu().numpy()
+        
+    clusters = {}
+    for i in range(total_nodes):
+        root = find_root(i, parent_arr)
+        if root not in clusters:
+            clusters[root] = []
+        clusters[root].append(i)
+        
+    pinned_root = find_root(0, parent_arr)
+    largest_q = get_largest_flippable_cluster_proportion(clusters, pinned_root, N_red)
+    return clusters, parent_arr, pinned_root, n_frozen_total, n_frozen_residuals, n_frozen_triangles, largest_q
+
+
+def perform_gel_and_get_clusters_numpy(beta, sigma, total_nodes, N_red, edges_list, epsilon_edges, rho, precomputed_triangles, omega):
+    frozen_edges = []
+    n_frozen_residuals = 0
+    n_frozen_triangles = 0
+    
+    # 1. Gel of residual edges
+    for idx, (u, v) in enumerate(edges_list):
+        if epsilon_edges[idx] * sigma[u] * sigma[v] == 1.0:
+            p_gel = 1.0 - np.exp(-beta * rho[idx])
+            if random.random() < p_gel:
+                frozen_edges.append((u, v))
+                n_frozen_residuals += 1
+                
+    # 2. Gel of triangles
+    for t_idx, (e1, e2, e3, eps1, eps2, eps3, p_t) in enumerate(precomputed_triangles):
+        omega_t = omega[t_idx]
+        if omega_t < 1e-9:
+            continue
+            
+        y1 = eps1 * sigma[e1[0]] * sigma[e1[1]]
+        y2 = eps2 * sigma[e2[0]] * sigma[e2[1]]
+        y3 = eps3 * sigma[e3[0]] * sigma[e3[1]]
+        
+        if p_t == 1.0: # Non-frustrated
+            if y1 == 1.0 and y2 == 1.0 and y3 == 1.0:
+                p_gel = 1.0 - np.exp(-2.0 * beta * omega_t)
+                if random.random() < p_gel:
+                    frozen_edges.extend([e1, e2, e3])
+                    n_frozen_triangles += 3
+        else: # Frustrated
+            satisfied_edges = []
+            if y1 == 1.0: satisfied_edges.append(e1)
+            if y2 == 1.0: satisfied_edges.append(e2)
+            if y3 == 1.0: satisfied_edges.append(e3)
+            
+            if len(satisfied_edges) == 2:
+                p_gel = 1.0 - np.exp(-2.0 * beta * omega_t)
+                if random.random() < p_gel:
+                    e_freeze = random.choice(satisfied_edges)
+                    frozen_edges.append(e_freeze)
+                    n_frozen_triangles += 1
+                    
+    # 3. Construct clusters (Union-Find)
+    parent = {i: i for i in range(total_nodes)}
+    
+    for u, v in frozen_edges:
+        union(u, v, parent)
+        
+    clusters = {}
+    for i in range(total_nodes):
+        root = find_root(i, parent)
+        if root not in clusters:
+            clusters[root] = []
+        clusters[root].append(i)
+        
+    pinned_root = find_root(0, parent)
+    largest_q = get_largest_flippable_cluster_proportion(clusters, pinned_root, N_red)
+    return clusters, parent, pinned_root, len(frozen_edges), n_frozen_residuals, n_frozen_triangles, largest_q
+
+
 def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, beta_init=0.5, target_q=0.10, exact_threshold=18, verbose=False, device='auto'):
     """
     The full MCMC Higher-Order solver.
@@ -602,8 +790,8 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
     t_start = time.time()
     
     if device == 'auto':
-        if HAS_TORCH and torch.cuda.is_available():
-            device = 'cuda'
+        if HAS_TORCH:
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
         else:
             device = 'numpy'
             
@@ -617,9 +805,13 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
         print("\n=== MCMC Higher-Order Solver Preprocessing ===")
         print(f"Input formula: {num_vars} variables, {len(clauses)} clauses")
         
+    cleaned_clauses = normalize_and_clean_clauses(clauses)
+    
     active_vars, active_clauses, fixed_literals, fixed_empty_clauses = \
-        recursive_unit_propagation_and_reductions(num_vars, clauses, verbose=verbose)
+        recursive_unit_propagation_and_reductions(num_vars, cleaned_clauses, verbose=verbose)
         
+    active_clauses = normalize_and_clean_clauses(active_clauses)
+    
     if verbose:
         print(f"After reductions: {len(active_vars)} active variables, {len(active_clauses)} active clauses")
         print(f"Fixed literals: {len(fixed_literals)} | Fixed empty clauses: {fixed_empty_clauses}")
@@ -633,32 +825,31 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
     # 2. Extended Graph construction
     if verbose:
         print("Constructing extended signed graph...")
-    A, var_to_idx, clause3_list, clause_to_merged_idx = \
+    A, var_to_idx, clause3_list, clause_to_merged_idx, total_nodes = \
         build_signed_graph_for_3sat(num_vars, active_vars, active_clauses, u=u_sat, verbose=verbose)
-    total_nodes = A.shape[0]
     N_red = len(active_vars)
     
     # 3. Triangles and LP Transfer
     if verbose:
         print("Finding triangles and running LP weight transfer...")
-    triangles = find_triangles(A)
-    omega, rho, edges_list, edge_to_idx = transfer_weights_to_triangles(A, triangles)
+    triangles = find_triangles(A, total_nodes)
+    omega, rho, edges_list, edge_to_idx = transfer_weights_to_triangles(A, triangles, total_nodes)
     
     if verbose:
         print(f"Found {len(triangles)} triangles.")
         print(f"LP Transfer: mass on triangles = {np.sum(omega):.4f} | residual edge mass = {np.sum(rho):.4f}")
         
     # Precompute edge signs and triangle properties to avoid overhead in the sweep loop
-    epsilon_edges = np.array([np.sign(A[u, v]) for u, v in edges_list])
+    epsilon_edges = np.array([np.sign(A[u][v]) for u, v in edges_list])
     precomputed_triangles = []
     for t_idx, (u, v, w) in enumerate(triangles):
         e1 = (u, v) if (u, v) in edge_to_idx else (v, u)
         e2 = (v, w) if (v, w) in edge_to_idx else (w, v)
         e3 = (u, w) if (u, w) in edge_to_idx else (w, u)
         
-        eps1 = np.sign(A[e1[0], e1[1]])
-        eps2 = np.sign(A[e2[0], e2[1]])
-        eps3 = np.sign(A[e3[0], e3[1]])
+        eps1 = np.sign(A[e1[0]][e1[1]])
+        eps2 = np.sign(A[e2[0]][e2[1]])
+        eps3 = np.sign(A[e3[0]][e3[1]])
         p_t = eps1 * eps2 * eps3
         precomputed_triangles.append((e1, e2, e3, eps1, eps2, eps3, p_t))
         
@@ -742,108 +933,47 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
         if best_unsat == 0:
             return best_spins, time.time() - t_start, 0
             
+        # Stochastic bisection to calibrate initial beta
+        if verbose:
+            print(f"Calibrating initial beta via stochastic bisection to target q = {target_q}...")
+        beta_min = 0.01
+        beta_max = 5.0
+        for bisection_step in range(6):
+            beta_mid = (beta_min + beta_max) / 2.0
+            samples = []
+            for _ in range(5):
+                _, _, _, _, _, _, q_val = perform_gel_and_get_clusters_torch(
+                    beta_mid, sigma_torch, device_obj, Ne, Nt_active, edges_src, edges_dst,
+                    epsilon_edges_torch, rho_torch, t_eps1, t_eps2, t_eps3,
+                    t_e1_src, t_e1_dst, t_e2_src, t_e2_dst, t_e3_src, t_e3_dst,
+                    t_omega, t_pt, total_nodes, N_red
+                )
+                samples.append(q_val)
+            median_q = np.median(samples)
+            if verbose:
+                print(f"  Bisection step {bisection_step + 1}: beta = {beta_mid:.4f} => median S_max = {median_q:.4f}")
+            if median_q < target_q:
+                beta_min = beta_mid
+            else:
+                beta_max = beta_mid
+        beta_init = (beta_min + beta_max) / 2.0
         beta = beta_init
+        if verbose:
+            print(f"Initial beta calibrated to: {beta:.4f}")
+            
         observed_sizes = []
         
         if verbose:
             print("\n=== Starting MCMC Sweeps (PyTorch Backend) ===")
             
         for sweep in range(1, max_sweeps + 1):
-            frozen_edges_src = []
-            frozen_edges_dst = []
-            n_frozen_residuals = 0
-            
-            # 1. Gel of residual edges
-            if Ne > 0:
-                y = epsilon_edges_torch * sigma_torch[edges_src] * sigma_torch[edges_dst]
-                probs = 1.0 - torch.exp(-beta * rho_torch)
-                freeze_mask = (y == 1.0) & (torch.rand(Ne, device=device_obj) < probs)
-                
-                frozen_edges_src.append(edges_src[freeze_mask])
-                frozen_edges_dst.append(edges_dst[freeze_mask])
-                n_frozen_residuals = int(torch.sum(freeze_mask).item())
-                
-            # 2. Gel of triangles
-            n_frozen_triangles = 0
-            if Nt_active > 0:
-                y1 = t_eps1 * sigma_torch[t_e1_src] * sigma_torch[t_e1_dst]
-                y2 = t_eps2 * sigma_torch[t_e2_src] * sigma_torch[t_e2_dst]
-                y3 = t_eps3 * sigma_torch[t_e3_src] * sigma_torch[t_e3_dst]
-                
-                # Non-frustrated
-                satisfied_nf = (t_pt == 1.0) & (y1 == 1.0) & (y2 == 1.0) & (y3 == 1.0) & (t_omega >= 1e-9)
-                probs_nf = 1.0 - torch.exp(-2.0 * beta * t_omega)
-                freeze_nf = satisfied_nf & (torch.rand(Nt_active, device=device_obj) < probs_nf)
-                
-                frozen_edges_src.extend([t_e1_src[freeze_nf], t_e2_src[freeze_nf], t_e3_src[freeze_nf]])
-                frozen_edges_dst.extend([t_e1_dst[freeze_nf], t_e2_dst[freeze_nf], t_e3_dst[freeze_nf]])
-                n_frozen_triangles += int(torch.sum(freeze_nf).item()) * 3
-                
-                # Frustrated
-                sat_count = (y1 == 1.0).float() + (y2 == 1.0).float() + (y3 == 1.0).float()
-                state_bas = (t_pt == -1.0) & (sat_count == 2.0) & (t_omega >= 1e-9)
-                probs_f = 1.0 - torch.exp(-2.0 * beta * t_omega)
-                freeze_f = state_bas & (torch.rand(Nt_active, device=device_obj) < probs_f)
-                
-                r = torch.rand(Nt_active, device=device_obj)
-                
-                # Case A
-                mask_A = freeze_f & (y1 == 1.0) & (y2 == 1.0)
-                src_A = torch.where(r < 0.5, t_e1_src, t_e2_src)
-                dst_A = torch.where(r < 0.5, t_e1_dst, t_e2_dst)
-                frozen_edges_src.append(src_A[mask_A])
-                frozen_edges_dst.append(dst_A[mask_A])
-                n_frozen_triangles += int(torch.sum(mask_A).item())
-                
-                # Case B
-                mask_B = freeze_f & (y2 == 1.0) & (y3 == 1.0)
-                src_B = torch.where(r < 0.5, t_e2_src, t_e3_src)
-                dst_B = torch.where(r < 0.5, t_e2_dst, t_e3_dst)
-                frozen_edges_src.append(src_B[mask_B])
-                frozen_edges_dst.append(dst_B[mask_B])
-                n_frozen_triangles += int(torch.sum(mask_B).item())
-                
-                # Case C
-                mask_C = freeze_f & (y1 == 1.0) & (y3 == 1.0)
-                src_C = torch.where(r < 0.5, t_e1_src, t_e3_src)
-                dst_C = torch.where(r < 0.5, t_e1_dst, t_e3_dst)
-                frozen_edges_src.append(src_C[mask_C])
-                frozen_edges_dst.append(dst_C[mask_C])
-                n_frozen_triangles += int(torch.sum(mask_C).item())
-                
-            if frozen_edges_src:
-                src_all = torch.cat(frozen_edges_src)
-                dst_all = torch.cat(frozen_edges_dst)
-                n_frozen_total = src_all.numel()
-            else:
-                src_all = torch.zeros(0, dtype=torch.long, device=device_obj)
-                dst_all = torch.zeros(0, dtype=torch.long, device=device_obj)
-                n_frozen_total = 0
-                
-            # 3. Construct clusters (Label Propagation in PyTorch)
-            parent_arr = np.arange(total_nodes)
-            if src_all.numel() > 0:
-                sym_src = torch.cat([src_all, dst_all])
-                sym_dst = torch.cat([dst_all, src_all])
-                
-                labels = torch.arange(total_nodes, device=device_obj)
-                for _ in range(100):
-                    labels_next = torch.scatter_reduce(labels, 0, sym_dst, labels[sym_src], reduce='amax', include_self=True)
-                    if torch.equal(labels, labels_next):
-                        break
-                    labels = labels_next
-                parent_arr = labels.cpu().numpy()
-                
-            clusters = {}
-            for i in range(total_nodes):
-                root = parent_arr[i]
-                if root not in clusters:
-                    clusters[root] = []
-                clusters[root].append(i)
-                
-            pinned_root = parent_arr[0]
-            
-            largest_q = get_largest_flippable_cluster_proportion(clusters, pinned_root, N_red)
+            clusters, parent_arr, pinned_root, n_frozen_total, n_frozen_residuals, n_frozen_triangles, largest_q = \
+                perform_gel_and_get_clusters_torch(
+                    beta, sigma_torch, device_obj, Ne, Nt_active, edges_src, edges_dst,
+                    epsilon_edges_torch, rho_torch, t_eps1, t_eps2, t_eps3,
+                    t_e1_src, t_e1_dst, t_e2_src, t_e2_dst, t_e3_src, t_e3_dst,
+                    t_omega, t_pt, total_nodes, N_red
+                )
             observed_sizes.append(largest_q)
             
             if sweep % 15 == 0:
@@ -853,10 +983,13 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
             # 4. Build reduced MaxSAT problem on cluster flips
             sigma = sigma_torch.cpu().numpy()
             full_sigma = extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars)
-            reduced_clauses = build_reduced_problem(clauses, full_sigma, parent_arr, pinned_root, var_to_idx)
-            reduced_clauses = [rc for rc in reduced_clauses if len(rc['forbidden']) > 0]
             
-            flippable_roots = [r for r in clusters.keys() if r != pinned_root]
+            flippable_roots = []
+            for r, nodes in clusters.items():
+                if r == pinned_root:
+                    continue
+                if any(1 <= n <= N_red for n in nodes):
+                    flippable_roots.append(r)
             m = len(flippable_roots)
             
             if m == 0:
@@ -865,6 +998,9 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
                 continue
                 
             root_to_idx = {r: i for i, r in enumerate(flippable_roots)}
+            
+            reduced_clauses = build_reduced_problem(clauses, full_sigma, parent_arr, pinned_root, var_to_idx, root_to_idx)
+            reduced_clauses = [rc for rc in reduced_clauses if len(rc['forbidden']) > 0]
             
             # 5. Solve reduced problem
             solver_type = 'Exhaustive'
@@ -876,8 +1012,8 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
                 
             # 6. Apply flips
             for idx in range(1, total_nodes):
-                r = parent_arr[idx]
-                if r == pinned_root:
+                r = find_root(idx, parent_arr)
+                if r == pinned_root or r not in root_to_idx:
                     z_val = 1
                 else:
                     z_val = z_best[root_to_idx[r]]
@@ -938,70 +1074,43 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
         if best_unsat == 0:
             return best_spins, time.time() - t_start, 0
             
+        # Stochastic bisection to calibrate initial beta
+        if verbose:
+            print(f"Calibrating initial beta via stochastic bisection to target q = {target_q}...")
+        beta_min = 0.01
+        beta_max = 5.0
+        for bisection_step in range(6):
+            beta_mid = (beta_min + beta_max) / 2.0
+            samples = []
+            for _ in range(5):
+                _, _, _, _, _, _, q_val = perform_gel_and_get_clusters_numpy(
+                    beta_mid, sigma, total_nodes, N_red, edges_list, epsilon_edges, rho,
+                    precomputed_triangles, omega
+                )
+                samples.append(q_val)
+            median_q = np.median(samples)
+            if verbose:
+                print(f"  Bisection step {bisection_step + 1}: beta = {beta_mid:.4f} => median S_max = {median_q:.4f}")
+            if median_q < target_q:
+                beta_min = beta_mid
+            else:
+                beta_max = beta_mid
+        beta_init = (beta_min + beta_max) / 2.0
         beta = beta_init
+        if verbose:
+            print(f"Initial beta calibrated to: {beta:.4f}")
+            
         observed_sizes = []
         
         if verbose:
             print("\n=== Starting MCMC Sweeps (NumPy CPU Backend) ===")
             
         for sweep in range(1, max_sweeps + 1):
-            frozen_edges = []
-            n_frozen_residuals = 0
-            n_frozen_triangles = 0
-            
-            # 1. Gel of residual edges
-            for idx, (u, v) in enumerate(edges_list):
-                if epsilon_edges[idx] * sigma[u] * sigma[v] == 1.0:
-                    p_gel = 1.0 - np.exp(-beta * rho[idx])
-                    if random.random() < p_gel:
-                        frozen_edges.append((u, v))
-                        n_frozen_residuals += 1
-                        
-            # 2. Gel of triangles
-            for t_idx, (e1, e2, e3, eps1, eps2, eps3, p_t) in enumerate(precomputed_triangles):
-                omega_t = omega[t_idx]
-                if omega_t < 1e-9:
-                    continue
-                    
-                y1 = eps1 * sigma[e1[0]] * sigma[e1[1]]
-                y2 = eps2 * sigma[e2[0]] * sigma[e2[1]]
-                y3 = eps3 * sigma[e3[0]] * sigma[e3[1]]
-                
-                if p_t == 1.0: # Non-frustrated
-                    if y1 == 1.0 and y2 == 1.0 and y3 == 1.0:
-                        p_gel = 1.0 - np.exp(-2.0 * beta * omega_t)
-                        if random.random() < p_gel:
-                            frozen_edges.extend([e1, e2, e3])
-                            n_frozen_triangles += 3
-                else: # Frustrated
-                    satisfied_edges = []
-                    if y1 == 1.0: satisfied_edges.append(e1)
-                    if y2 == 1.0: satisfied_edges.append(e2)
-                    if y3 == 1.0: satisfied_edges.append(e3)
-                    
-                    if len(satisfied_edges) == 2:
-                        p_gel = 1.0 - np.exp(-2.0 * beta * omega_t)
-                        if random.random() < p_gel:
-                            e_freeze = random.choice(satisfied_edges)
-                            frozen_edges.append(e_freeze)
-                            n_frozen_triangles += 1
-                            
-            # 3. Construct clusters (Union-Find)
-            parent = {i: i for i in range(total_nodes)}
-            
-            for u, v in frozen_edges:
-                union(u, v, parent)
-                
-            clusters = {}
-            for i in range(total_nodes):
-                root = find_root(i, parent)
-                if root not in clusters:
-                    clusters[root] = []
-                clusters[root].append(i)
-                
-            pinned_root = find_root(0, parent)
-            
-            largest_q = get_largest_flippable_cluster_proportion(clusters, pinned_root, N_red)
+            clusters, parent, pinned_root, n_frozen_total, n_frozen_residuals, n_frozen_triangles, largest_q = \
+                perform_gel_and_get_clusters_numpy(
+                    beta, sigma, total_nodes, N_red, edges_list, epsilon_edges, rho,
+                    precomputed_triangles, omega
+                )
             observed_sizes.append(largest_q)
             
             if sweep % 15 == 0:
@@ -1010,10 +1119,13 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
                 
             # 4. Build reduced MaxSAT problem on cluster flips
             full_sigma = extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars)
-            reduced_clauses = build_reduced_problem(clauses, full_sigma, parent, pinned_root, var_to_idx)
-            reduced_clauses = [rc for rc in reduced_clauses if len(rc['forbidden']) > 0]
             
-            flippable_roots = [r for r in clusters.keys() if r != pinned_root]
+            flippable_roots = []
+            for r, nodes in clusters.items():
+                if r == pinned_root:
+                    continue
+                if any(1 <= n <= N_red for n in nodes):
+                    flippable_roots.append(r)
             m = len(flippable_roots)
             
             if m == 0:
@@ -1022,6 +1134,9 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
                 continue
                 
             root_to_idx = {r: i for i, r in enumerate(flippable_roots)}
+            
+            reduced_clauses = build_reduced_problem(clauses, full_sigma, parent, pinned_root, var_to_idx, root_to_idx)
+            reduced_clauses = [rc for rc in reduced_clauses if len(rc['forbidden']) > 0]
             
             # 5. Solve reduced problem
             solver_type = 'Exhaustive'
@@ -1034,7 +1149,7 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
             # 6. Apply flips
             for idx in range(1, total_nodes):
                 r = find_root(idx, parent)
-                if r == pinned_root:
+                if r == pinned_root or r not in root_to_idx:
                     z_val = 1
                 else:
                     z_val = z_best[root_to_idx[r]]
@@ -1049,7 +1164,6 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
             
             pinned_size = len(clusters.get(pinned_root, []))
             largest_flippable_size = int(largest_q * N_red)
-            n_frozen_total = len(frozen_edges)
             
             if verbose:
                 print(f"Sweep {sweep:3d}/{max_sweeps} | Beta: {beta:.3f} | Frozen edges: {n_frozen_total:4d} (res: {n_frozen_residuals:3d}, tri: {n_frozen_triangles:3d}) | "
