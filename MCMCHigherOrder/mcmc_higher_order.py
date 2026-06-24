@@ -328,19 +328,25 @@ def optimize_auxiliaries(sigma, active_clauses, var_to_idx, clause3_list, clause
         else:
             sigma[aux_node] = 1.0
 
+def find_root(i, parent):
+    path = []
+    while parent[i] != i:
+        path.append(i)
+        i = parent[i]
+    for node in path:
+        parent[node] = i
+    return i
+
+def union(i, j, parent):
+    root_i = find_root(i, parent)
+    root_j = find_root(j, parent)
+    if root_i != root_j:
+        parent[root_i] = root_j
+
 def build_reduced_problem(clauses, full_sigma, parent, pinned_root, var_to_idx):
     """
     Reduces the original SAT clauses to constraint clauses over the flippable cluster variables.
     """
-    def find_root(i):
-        path = []
-        while parent[i] != i:
-            path.append(i)
-            i = parent[i]
-        for node in path:
-            parent[node] = i
-        return i
-
     reduced_clauses = []
     for c_idx, c in enumerate(clauses):
         trivially_satisfied = False
@@ -351,7 +357,7 @@ def build_reduced_problem(clauses, full_sigma, parent, pinned_root, var_to_idx):
             L_0 = pol * full_sigma[var]
             
             if var in var_to_idx:
-                c_root = find_root(var_to_idx[var])
+                c_root = find_root(var_to_idx[var], parent)
             else:
                 c_root = pinned_root
                 
@@ -607,9 +613,8 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
     
     # 4. Initialize spins
     sigma = np.ones(total_nodes, dtype=float)
-    # Initialize variables randomly
-    for v in range(1, N_red + 1):
-        sigma[v] = random.choice([-1.0, 1.0])
+    # Initialize variables randomly using NumPy vectorization
+    sigma[1:N_red + 1] = np.random.choice([-1.0, 1.0], size=N_red)
     sigma[0] = 1.0 # reference T
     optimize_auxiliaries(sigma, active_clauses, var_to_idx, clause3_list, clause_to_merged_idx)
     
@@ -619,6 +624,20 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
     if best_unsat == 0:
         return best_spins, time.time() - t_start, 0
         
+    # Precompute edge signs and triangle properties to avoid overhead in the sweep loop
+    epsilon_edges = np.array([np.sign(A[u, v]) for u, v in edges_list])
+    precomputed_triangles = []
+    for t_idx, (u, v, w) in enumerate(triangles):
+        e1 = (u, v) if (u, v) in edge_to_idx else (v, u)
+        e2 = (v, w) if (v, w) in edge_to_idx else (w, v)
+        e3 = (u, w) if (u, w) in edge_to_idx else (w, u)
+        
+        eps1 = np.sign(A[e1[0], e1[1]])
+        eps2 = np.sign(A[e2[0], e2[1]])
+        eps3 = np.sign(A[e3[0], e3[1]])
+        p_t = eps1 * eps2 * eps3
+        precomputed_triangles.append((e1, e2, e3, eps1, eps2, eps3, p_t))
+        
     beta = beta_init
     observed_sizes = []
     
@@ -627,31 +646,20 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
         
         # 1. Gel of residual edges
         for idx, (u, v) in enumerate(edges_list):
-            epsilon_e = np.sign(A[u, v])
-            if epsilon_e * sigma[u] * sigma[v] == 1.0:
+            if epsilon_edges[idx] * sigma[u] * sigma[v] == 1.0:
                 p_gel = 1.0 - np.exp(-beta * rho[idx])
                 if random.random() < p_gel:
                     frozen_edges.append((u, v))
                     
         # 2. Gel of triangles
-        for t_idx, (u, v, w) in enumerate(triangles):
+        for t_idx, (e1, e2, e3, eps1, eps2, eps3, p_t) in enumerate(precomputed_triangles):
             omega_t = omega[t_idx]
             if omega_t < 1e-9:
                 continue
                 
-            e1 = (u, v) if (u, v) in edge_to_idx else (v, u)
-            e2 = (v, w) if (v, w) in edge_to_idx else (w, v)
-            e3 = (u, w) if (u, w) in edge_to_idx else (w, u)
-            
-            eps1 = np.sign(A[e1[0], e1[1]])
-            eps2 = np.sign(A[e2[0], e2[1]])
-            eps3 = np.sign(A[e3[0], e3[1]])
-            
             y1 = eps1 * sigma[e1[0]] * sigma[e1[1]]
             y2 = eps2 * sigma[e2[0]] * sigma[e2[1]]
             y3 = eps3 * sigma[e3[0]] * sigma[e3[1]]
-            
-            p_t = eps1 * eps2 * eps3
             
             if p_t == 1.0: # Non-frustrated
                 if y1 == 1.0 and y2 == 1.0 and y3 == 1.0:
@@ -673,32 +681,17 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
         # 3. Construct clusters (Union-Find)
         parent = {i: i for i in range(total_nodes)}
         
-        def find_root(i):
-            path = []
-            while parent[i] != i:
-                path.append(i)
-                i = parent[i]
-            for node in path:
-                parent[node] = i
-            return i
-
-        def union(i, j):
-            root_i = find_root(i)
-            root_j = find_root(j)
-            if root_i != root_j:
-                parent[root_i] = root_j
-                
         for u, v in frozen_edges:
-            union(u, v)
+            union(u, v, parent)
             
         clusters = {}
         for i in range(total_nodes):
-            root = find_root(i)
+            root = find_root(i, parent)
             if root not in clusters:
                 clusters[root] = []
             clusters[root].append(i)
             
-        pinned_root = find_root(0)
+        pinned_root = find_root(0, parent)
         
         # Adaptation of beta
         largest_q = get_largest_flippable_cluster_proportion(clusters, pinned_root, N_red)
@@ -730,7 +723,7 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
             
         # 6. Apply flips
         for idx in range(1, total_nodes):
-            r = find_root(idx)
+            r = find_root(idx, parent)
             if r == pinned_root:
                 z_val = 1
             else:
@@ -752,10 +745,9 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
                 
         # 8. Periodic restarts if stymied
         if sweep % 80 == 0 and best_unsat > 0:
-            # Soft perturbation: restart 30% of original variables randomly
-            for v in range(1, N_red + 1):
-                if random.random() < 0.3:
-                    sigma[v] = random.choice([-1.0, 1.0])
+            # Soft perturbation: restart 30% of original variables randomly using NumPy
+            mask = np.random.random(N_red) < 0.3
+            sigma[1:N_red + 1][mask] = np.random.choice([-1.0, 1.0], size=np.sum(mask))
             optimize_auxiliaries(sigma, active_clauses, var_to_idx, clause3_list, clause_to_merged_idx)
             
     t_elapsed = time.time() - t_start

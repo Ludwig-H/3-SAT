@@ -2,8 +2,9 @@ import json
 import os
 
 def create_mcmc_notebook():
-    mcmc_code_path = "/workspaces/3-SAT/MCMCHigherOrder/mcmc_higher_order.py"
-    notebook_path = "/workspaces/3-SAT/MCMCHigherOrder/mcmc_higher_order.ipynb"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    mcmc_code_path = os.path.join(script_dir, "mcmc_higher_order.py")
+    notebook_path = os.path.join(script_dir, "mcmc_higher_order.ipynb")
     
     # Read the mcmc_higher_order.py file
     if os.path.exists(mcmc_code_path):

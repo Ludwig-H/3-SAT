@@ -5,15 +5,16 @@ import random
 import numpy as np
 from pysat.solvers import Glucose4
 
-# Add the workspace root to sys.path to allow importing from MCMCHigherOrder
-sys.path.append("/workspaces/3-SAT")
+script_dir = os.path.dirname(os.path.abspath(__file__))
+workspace_root = os.path.abspath(os.path.join(script_dir, ".."))
+sys.path.append(workspace_root)
 
 from MCMCHigherOrder.mcmc_higher_order import (
     solve_3sat_mcmc_higher_order,
     count_unsat_clauses
 )
 
-BENCHMARKS_DIR = "/workspaces/3-SAT/benchmarks"
+BENCHMARKS_DIR = os.path.join(workspace_root, "benchmarks")
 
 KISSAT_BENCHMARKS = {
     "xor6": "https://raw.githubusercontent.com/arminbiere/kissat/master/test/cnf/xor6.cnf",
@@ -364,7 +365,7 @@ def run_all_benchmarks():
     print(report_content)
     
     # Save the report to a markdown file
-    report_path = "/workspaces/3-SAT/MCMCHigherOrder/benchmark_results.md"
+    report_path = os.path.join(script_dir, "benchmark_results.md")
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report_content)
     print(f"\nRapport écrit avec succès dans {report_path} !")
