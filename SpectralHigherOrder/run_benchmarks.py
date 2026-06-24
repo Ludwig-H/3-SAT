@@ -280,7 +280,8 @@ def run_all_benchmarks():
         filepath = os.path.join(BENCHMARKS_DIR, f"{name}.cnf")
         if os.path.exists(filepath):
             n_vars, clauses = parse_dimacs_file(filepath)
-            bench_list.append((name, n_vars, clauses))
+            n_vars_3sat, clauses_3sat = convert_to_3sat(n_vars, clauses)
+            bench_list.append((name, n_vars_3sat, clauses_3sat))
             
     # 2. Circuit Miters
     bench_list.append(("Miter_Small", *generate_miter_circuit_3sat(10, 40, "Facile", seed=1)))

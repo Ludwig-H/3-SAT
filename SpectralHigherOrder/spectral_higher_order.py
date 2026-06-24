@@ -303,7 +303,7 @@ def transfer_weights_to_triangles(A, triangles):
 def solve_edge_space_qp(A, omega, rho, edges_list, edge_to_idx, triangles, kappa=1.0):
     """
     Formulates and solves the bounded convex edge-space QP using SciPy.
-    Runs in O(Nt) complexity per iteration, avoiding dense matrix construction.
+    Runs in O(Nt) complexity per iteration, vectorized with sparse incidence matrices.
     """
     Ne = len(edges_list)
     Nt = len(triangles)
@@ -314,7 +314,9 @@ def solve_edge_space_qp(A, omega, rho, edges_list, edge_to_idx, triangles, kappa
     if Nt == 0:
         return np.zeros(Ne)
         
-    tri_edge_indices = []
+    rows = []
+    cols = []
+    data = []
     b = np.zeros(Nt, dtype=np.float64)
     
     for t_idx, (i, j, k) in enumerate(triangles):
@@ -325,7 +327,10 @@ def solve_edge_space_qp(A, omega, rho, edges_list, edge_to_idx, triangles, kappa
         idx1 = edge_to_idx[e1]
         idx2 = edge_to_idx[e2]
         idx3 = edge_to_idx[e3]
-        tri_edge_indices.append((idx1, idx2, idx3))
+        
+        rows.extend([t_idx, t_idx, t_idx])
+        cols.extend([idx1, idx2, idx3])
+        data.extend([1.0, 1.0, 1.0])
         
         sign1 = np.sign(A[e1[0], e1[1]])
         sign2 = np.sign(A[e2[0], e2[1]])
@@ -334,22 +339,20 @@ def solve_edge_space_qp(A, omega, rho, edges_list, edge_to_idx, triangles, kappa
         p_t = sign1 * sign2 * sign3
         b[t_idx] = 0.5 * (1.0 - p_t)
         
+    # B2T is Nt x Ne. This is the transpose of the incidence matrix B2.
+    B2T = scipy.sparse.coo_matrix((data, (rows, cols)), shape=(Nt, Ne)).tocsr()
+    # B2 is Ne x Nt
+    B2 = B2T.T.tocsr()
+    
     def objective(p):
         obj = np.dot(W, p)
-        # v_t = p[e1] + p[e2] + p[e3] - b_t
-        v = np.array([p[e1] + p[e2] + p[e3] for e1, e2, e3 in tri_edge_indices]) - b
+        v = B2T.dot(p) - b
         obj += kappa * np.dot(omega, v**2)
         return obj
         
     def gradient(p):
-        grad = W.copy()
-        v = np.array([p[e1] + p[e2] + p[e3] for e1, e2, e3 in tri_edge_indices]) - b
-        coeff = 2.0 * kappa * omega * v
-        for t_idx, (e1, e2, e3) in enumerate(tri_edge_indices):
-            c = coeff[t_idx]
-            grad[e1] += c
-            grad[e2] += c
-            grad[e3] += c
+        v = B2T.dot(p) - b
+        grad = W + 2.0 * kappa * B2.dot(omega * v)
         return grad
         
     p0 = np.zeros(Ne)
