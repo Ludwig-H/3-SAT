@@ -584,12 +584,20 @@ def get_pinned_cluster_proportion(clusters, pinned_root, N_red):
     orig_nodes = sum(1 for n in clusters[pinned_root] if 1 <= n <= N_red)
     return orig_nodes / N_red if N_red > 0 else 0.0
 
-def update_beta(beta, observed_sizes, target=0.10, gamma=0.5):
+def update_beta(beta, observed_sizes, observed_S_T=None, target=0.10, gamma=0.5):
+    if observed_S_T is not None and len(observed_S_T) > 0:
+        median_S_T = np.median(observed_S_T)
+        if median_S_T > 0.70:
+            # Force melting by decreasing beta
+            new_log_beta = np.log(beta) - gamma * 0.3
+            return np.clip(np.exp(new_log_beta), 0.01, 10.0)
+            
     if not observed_sizes:
         return beta
     s_obs = np.median(observed_sizes)
     new_log_beta = np.log(beta) + gamma * (target - s_obs)
     return np.clip(np.exp(new_log_beta), 0.01, 10.0)
+
 
 def extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars):
     """
@@ -623,7 +631,7 @@ def count_unsat_clauses(spins, clauses):
             unsat_count += 1
     return unsat_count
 
-def perform_gel_and_get_clusters_torch(beta, sigma_torch, device_obj, Ne, Nt_active, edges_src, edges_dst, epsilon_edges_torch, rho_torch, t_eps1, t_eps2, t_eps3, t_e1_src, t_e1_dst, t_e2_src, t_e2_dst, t_e3_src, t_e3_dst, t_omega, t_pt, total_nodes, N_red):
+def perform_gel_and_get_clusters_torch(beta, sigma_torch, device_obj, Ne, Nt_active, edges_src, edges_dst, epsilon_edges_torch, rho_torch, t_eps1, t_eps2, t_eps3, t_e1_src, t_e1_dst, t_e2_src, t_e2_dst, t_e3_src, t_e3_dst, t_omega, t_pt, total_nodes, N_red, beta_T_factor=0.1):
     frozen_edges_src = []
     frozen_edges_dst = []
     n_frozen_residuals = 0
@@ -632,7 +640,9 @@ def perform_gel_and_get_clusters_torch(beta, sigma_torch, device_obj, Ne, Nt_act
     # 1. Gel of residual edges
     if Ne > 0:
         y = epsilon_edges_torch * sigma_torch[edges_src] * sigma_torch[edges_dst]
-        probs = 1.0 - torch.exp(-beta * rho_torch)
+        is_T_edge = (edges_src == 0) | (edges_dst == 0)
+        beta_eff = torch.where(is_T_edge, beta * beta_T_factor, beta)
+        probs = 1.0 - torch.exp(-beta_eff * rho_torch)
         freeze_mask = (y == 1.0) & (torch.rand(Ne, device=device_obj) < probs)
         
         frozen_edges_src.append(edges_src[freeze_mask])
@@ -645,9 +655,12 @@ def perform_gel_and_get_clusters_torch(beta, sigma_torch, device_obj, Ne, Nt_act
         y2 = t_eps2 * sigma_torch[t_e2_src] * sigma_torch[t_e2_dst]
         y3 = t_eps3 * sigma_torch[t_e3_src] * sigma_torch[t_e3_dst]
         
+        is_T_triangle = (t_e1_src == 0)
+        t_beta_eff = torch.where(is_T_triangle, beta * beta_T_factor, beta)
+        
         # Non-frustrated
         satisfied_nf = (t_pt == 1.0) & (y1 == 1.0) & (y2 == 1.0) & (y3 == 1.0) & (t_omega >= 1e-9)
-        probs_nf = 1.0 - torch.exp(-2.0 * beta * t_omega)
+        probs_nf = 1.0 - torch.exp(-2.0 * t_beta_eff * t_omega)
         freeze_nf = satisfied_nf & (torch.rand(Nt_active, device=device_obj) < probs_nf)
         
         frozen_edges_src.extend([t_e1_src[freeze_nf], t_e2_src[freeze_nf], t_e3_src[freeze_nf]])
@@ -657,7 +670,7 @@ def perform_gel_and_get_clusters_torch(beta, sigma_torch, device_obj, Ne, Nt_act
         # Frustrated
         sat_count = (y1 == 1.0).float() + (y2 == 1.0).float() + (y3 == 1.0).float()
         state_bas = (t_pt == -1.0) & (sat_count == 2.0) & (t_omega >= 1e-9)
-        probs_f = 1.0 - torch.exp(-2.0 * beta * t_omega)
+        probs_f = 1.0 - torch.exp(-2.0 * t_beta_eff * t_omega)
         freeze_f = state_bas & (torch.rand(Nt_active, device=device_obj) < probs_f)
         
         r = torch.rand(Nt_active, device=device_obj)
@@ -718,10 +731,12 @@ def perform_gel_and_get_clusters_torch(beta, sigma_torch, device_obj, Ne, Nt_act
         
     pinned_root = find_root(0, parent_arr)
     largest_q = get_largest_flippable_cluster_proportion(clusters, pinned_root, N_red)
-    return clusters, parent_arr, pinned_root, n_frozen_total, n_frozen_residuals, n_frozen_triangles, largest_q
+    pinned_orig = sum(1 for n in clusters.get(pinned_root, []) if 1 <= n <= N_red)
+    S_T = pinned_orig / N_red if N_red > 0 else 0.0
+    return clusters, parent_arr, pinned_root, n_frozen_total, n_frozen_residuals, n_frozen_triangles, largest_q, S_T
 
 
-def perform_gel_and_get_clusters_numpy(beta, sigma, total_nodes, N_red, edges_list, epsilon_edges, rho, precomputed_triangles, omega):
+def perform_gel_and_get_clusters_numpy(beta, sigma, total_nodes, N_red, edges_list, epsilon_edges, rho, precomputed_triangles, omega, beta_T_factor=0.1):
     frozen_edges = []
     n_frozen_residuals = 0
     n_frozen_triangles = 0
@@ -729,7 +744,8 @@ def perform_gel_and_get_clusters_numpy(beta, sigma, total_nodes, N_red, edges_li
     # 1. Gel of residual edges
     for idx, (u, v) in enumerate(edges_list):
         if epsilon_edges[idx] * sigma[u] * sigma[v] == 1.0:
-            p_gel = 1.0 - np.exp(-beta * rho[idx])
+            beta_eff = beta * beta_T_factor if (u == 0 or v == 0) else beta
+            p_gel = 1.0 - np.exp(-beta_eff * rho[idx])
             if random.random() < p_gel:
                 frozen_edges.append((u, v))
                 n_frozen_residuals += 1
@@ -744,9 +760,12 @@ def perform_gel_and_get_clusters_numpy(beta, sigma, total_nodes, N_red, edges_li
         y2 = eps2 * sigma[e2[0]] * sigma[e2[1]]
         y3 = eps3 * sigma[e3[0]] * sigma[e3[1]]
         
+        is_T_tri = (e1[0] == 0)
+        beta_eff = beta * beta_T_factor if is_T_tri else beta
+        
         if p_t == 1.0: # Non-frustrated
             if y1 == 1.0 and y2 == 1.0 and y3 == 1.0:
-                p_gel = 1.0 - np.exp(-2.0 * beta * omega_t)
+                p_gel = 1.0 - np.exp(-2.0 * beta_eff * omega_t)
                 if random.random() < p_gel:
                     frozen_edges.extend([e1, e2, e3])
                     n_frozen_triangles += 3
@@ -757,7 +776,7 @@ def perform_gel_and_get_clusters_numpy(beta, sigma, total_nodes, N_red, edges_li
             if y3 == 1.0: satisfied_edges.append(e3)
             
             if len(satisfied_edges) == 2:
-                p_gel = 1.0 - np.exp(-2.0 * beta * omega_t)
+                p_gel = 1.0 - np.exp(-2.0 * beta_eff * omega_t)
                 if random.random() < p_gel:
                     e_freeze = random.choice(satisfied_edges)
                     frozen_edges.append(e_freeze)
@@ -778,10 +797,12 @@ def perform_gel_and_get_clusters_numpy(beta, sigma, total_nodes, N_red, edges_li
         
     pinned_root = find_root(0, parent)
     largest_q = get_largest_flippable_cluster_proportion(clusters, pinned_root, N_red)
-    return clusters, parent, pinned_root, len(frozen_edges), n_frozen_residuals, n_frozen_triangles, largest_q
+    pinned_orig = sum(1 for n in clusters.get(pinned_root, []) if 1 <= n <= N_red)
+    S_T = pinned_orig / N_red if N_red > 0 else 0.0
+    return clusters, parent, pinned_root, len(frozen_edges), n_frozen_residuals, n_frozen_triangles, largest_q, S_T
 
 
-def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, beta_init=0.5, target_q=0.10, exact_threshold=18, verbose=False, device='auto'):
+def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, beta_init=0.5, target_q=0.10, exact_threshold=18, beta_T_factor=0.1, verbose=False, device='auto'):
     """
     The full MCMC Higher-Order solver.
     Supports a device-agnostic PyTorch backend ('cuda', 'cpu') for GPU acceleration,
@@ -940,45 +961,54 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
         beta_max = 5.0
         for bisection_step in range(6):
             beta_mid = (beta_min + beta_max) / 2.0
-            samples = []
+            samples_q = []
+            samples_S_T = []
             for _ in range(5):
-                _, _, _, _, _, _, q_val = perform_gel_and_get_clusters_torch(
+                _, _, _, _, _, _, q_val, S_T_val = perform_gel_and_get_clusters_torch(
                     beta_mid, sigma_torch, device_obj, Ne, Nt_active, edges_src, edges_dst,
                     epsilon_edges_torch, rho_torch, t_eps1, t_eps2, t_eps3,
                     t_e1_src, t_e1_dst, t_e2_src, t_e2_dst, t_e3_src, t_e3_dst,
-                    t_omega, t_pt, total_nodes, N_red
+                    t_omega, t_pt, total_nodes, N_red, beta_T_factor=beta_T_factor
                 )
-                samples.append(q_val)
-            median_q = np.median(samples)
+                samples_q.append(q_val)
+                samples_S_T.append(S_T_val)
+            median_q = np.median(samples_q)
+            median_S_T = np.median(samples_S_T)
             if verbose:
-                print(f"  Bisection step {bisection_step + 1}: beta = {beta_mid:.4f} => median S_max = {median_q:.4f}")
-            if median_q < target_q:
-                beta_min = beta_mid
-            else:
+                print(f"  Bisection step {bisection_step + 1}: beta = {beta_mid:.4f} => median S_max = {median_q:.4f} | median S_T = {median_S_T:.4f}")
+            if median_S_T > 0.70:
                 beta_max = beta_mid
+            else:
+                if median_q < target_q:
+                    beta_min = beta_mid
+                else:
+                    beta_max = beta_mid
         beta_init = (beta_min + beta_max) / 2.0
         beta = beta_init
         if verbose:
             print(f"Initial beta calibrated to: {beta:.4f}")
             
         observed_sizes = []
+        observed_S_T = []
         
         if verbose:
             print("\n=== Starting MCMC Sweeps (PyTorch Backend) ===")
             
         for sweep in range(1, max_sweeps + 1):
-            clusters, parent_arr, pinned_root, n_frozen_total, n_frozen_residuals, n_frozen_triangles, largest_q = \
+            clusters, parent_arr, pinned_root, n_frozen_total, n_frozen_residuals, n_frozen_triangles, largest_q, S_T = \
                 perform_gel_and_get_clusters_torch(
                     beta, sigma_torch, device_obj, Ne, Nt_active, edges_src, edges_dst,
                     epsilon_edges_torch, rho_torch, t_eps1, t_eps2, t_eps3,
                     t_e1_src, t_e1_dst, t_e2_src, t_e2_dst, t_e3_src, t_e3_dst,
-                    t_omega, t_pt, total_nodes, N_red
+                    t_omega, t_pt, total_nodes, N_red, beta_T_factor=beta_T_factor
                 )
             observed_sizes.append(largest_q)
+            observed_S_T.append(S_T)
             
             if sweep % 15 == 0:
-                beta = update_beta(beta, observed_sizes, target=target_q)
+                beta = update_beta(beta, observed_sizes, observed_S_T=observed_S_T, target=target_q)
                 observed_sizes = []
+                observed_S_T = []
                 
             # 4. Build reduced MaxSAT problem on cluster flips
             sigma = sigma_torch.cpu().numpy()
@@ -1081,41 +1111,50 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
         beta_max = 5.0
         for bisection_step in range(6):
             beta_mid = (beta_min + beta_max) / 2.0
-            samples = []
+            samples_q = []
+            samples_S_T = []
             for _ in range(5):
-                _, _, _, _, _, _, q_val = perform_gel_and_get_clusters_numpy(
+                _, _, _, _, _, _, q_val, S_T_val = perform_gel_and_get_clusters_numpy(
                     beta_mid, sigma, total_nodes, N_red, edges_list, epsilon_edges, rho,
-                    precomputed_triangles, omega
+                    precomputed_triangles, omega, beta_T_factor=beta_T_factor
                 )
-                samples.append(q_val)
-            median_q = np.median(samples)
+                samples_q.append(q_val)
+                samples_S_T.append(S_T_val)
+            median_q = np.median(samples_q)
+            median_S_T = np.median(samples_S_T)
             if verbose:
-                print(f"  Bisection step {bisection_step + 1}: beta = {beta_mid:.4f} => median S_max = {median_q:.4f}")
-            if median_q < target_q:
-                beta_min = beta_mid
-            else:
+                print(f"  Bisection step {bisection_step + 1}: beta = {beta_mid:.4f} => median S_max = {median_q:.4f} | median S_T = {median_S_T:.4f}")
+            if median_S_T > 0.70:
                 beta_max = beta_mid
+            else:
+                if median_q < target_q:
+                    beta_min = beta_mid
+                else:
+                    beta_max = beta_mid
         beta_init = (beta_min + beta_max) / 2.0
         beta = beta_init
         if verbose:
             print(f"Initial beta calibrated to: {beta:.4f}")
             
         observed_sizes = []
+        observed_S_T = []
         
         if verbose:
             print("\n=== Starting MCMC Sweeps (NumPy CPU Backend) ===")
             
         for sweep in range(1, max_sweeps + 1):
-            clusters, parent, pinned_root, n_frozen_total, n_frozen_residuals, n_frozen_triangles, largest_q = \
+            clusters, parent, pinned_root, n_frozen_total, n_frozen_residuals, n_frozen_triangles, largest_q, S_T = \
                 perform_gel_and_get_clusters_numpy(
                     beta, sigma, total_nodes, N_red, edges_list, epsilon_edges, rho,
-                    precomputed_triangles, omega
+                    precomputed_triangles, omega, beta_T_factor=beta_T_factor
                 )
             observed_sizes.append(largest_q)
+            observed_S_T.append(S_T)
             
             if sweep % 15 == 0:
-                beta = update_beta(beta, observed_sizes, target=target_q)
+                beta = update_beta(beta, observed_sizes, observed_S_T=observed_S_T, target=target_q)
                 observed_sizes = []
+                observed_S_T = []
                 
             # 4. Build reduced MaxSAT problem on cluster flips
             full_sigma = extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars)
