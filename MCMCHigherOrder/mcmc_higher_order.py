@@ -167,14 +167,16 @@ def normalize_and_clean_clauses(clauses):
 
 def build_signed_graph_for_3sat(num_vars, active_vars, active_clauses, u=1.0, verbose=False):
     """
-    Builds the extended signed graph. Merges auxiliary nodes sharing the same canonical pair.
-    Returns A (dict-of-dicts sparse representation), var_to_idx, clause3_list, clause_to_merged_idx, total_nodes.
+    Builds the extended signed graph.
+    Applies triplet-level Walsh-Fourier simplification and merges auxiliary nodes 
+    sharing the same canonical/best literal pair.
     """
     var_list = sorted(list(active_vars))
     var_to_idx = {v: i + 1 for i, v in enumerate(var_list)}
     N_red = len(var_list)
     
-    clause3_list = []
+    # 1. Group ternary clauses by variable index triplet
+    triplet_to_clauses = {}
     for c in active_clauses:
         if len(c) == 3:
             v1, v2, v3 = abs(c[0]), abs(c[1]), abs(c[2])
@@ -185,14 +187,95 @@ def build_signed_graph_for_3sat(num_vars, active_vars, active_clauses, u=1.0, ve
             
             lits = [(idx1, pol1), (idx2, pol2), (idx3, pol3)]
             lits.sort(key=lambda x: x[0])
-            canonical_pair = (lits[0][0], lits[0][1], lits[1][0], lits[1][1])
             
-            clause3_list.append({
-                'idx': [idx1, idx2, idx3],
-                'pol': [pol1, pol2, pol3],
-                'canonical_pair': canonical_pair
-            })
+            triplet = (lits[0][0], lits[1][0], lits[2][0])
+            if triplet not in triplet_to_clauses:
+                triplet_to_clauses[triplet] = []
+            triplet_to_clauses[triplet].append(lits)
             
+    direct_edges = []
+    effective_clauses = []
+    
+    for triplet, list_of_clauses in triplet_to_clauses.items():
+        idx1, idx2, idx3 = triplet
+        
+        # Calculate sum of sign products
+        sign_sum = 0
+        for lits in list_of_clauses:
+            sign_sum += lits[0][1] * lits[1][1] * lits[2][1]
+            
+        lambda_val = u * abs(sign_sum)
+        
+        # Calculate base linear and quadratic coefficients
+        h = [0.0, 0.0, 0.0]
+        J = {(0,1): 0.0, (1,2): 0.0, (0,2): 0.0}
+        
+        for lits in list_of_clauses:
+            for r in range(3):
+                h[r] += -u / 8.0 * lits[r][1]
+            J[(0,1)] += (u / 8.0) * lits[0][1] * lits[1][1]
+            J[(1,2)] += (u / 8.0) * lits[1][1] * lits[2][1]
+            J[(0,2)] += (u / 8.0) * lits[0][1] * lits[2][1]
+            
+        if lambda_val < 1e-9:
+            # Complete cancellation! No auxiliary needed.
+            for r, idx in enumerate([idx1, idx2, idx3]):
+                if abs(h[r]) > 1e-9:
+                    direct_edges.append((idx, 0, 2.0 * abs(h[r]), -1 if h[r] > 0 else 1))
+            for (r, m), idx_pair in [((0, 1), (idx1, idx2)), ((1, 2), (idx2, idx3)), ((0, 2), (idx1, idx3))]:
+                coeff = J[(r, m)]
+                if abs(coeff) > 1e-9:
+                    direct_edges.append((idx_pair[0], idx_pair[1], 2.0 * abs(coeff), -1 if coeff > 0 else 1))
+        else:
+            # We need exactly one auxiliary
+            pi1 = 1
+            pi2 = 1
+            pi3 = 1 if sign_sum > 0 else -1
+            pi = [pi1, pi2, pi3]
+            
+            h_diff = [0.0, 0.0, 0.0]
+            for r in range(3):
+                h_diff[r] = h[r] + (lambda_val / 8.0) * pi[r]
+                
+            J_diff = {(0,1): 0.0, (1,2): 0.0, (0,2): 0.0}
+            J_diff[(0,1)] = J[(0,1)] - (lambda_val / 8.0) * pi1 * pi2
+            J_diff[(1,2)] = J[(1,2)] - (lambda_val / 8.0) * pi2 * pi3
+            J_diff[(0,2)] = J[(0,2)] - (lambda_val / 8.0) * pi1 * pi3
+            
+            for r, idx in enumerate([idx1, idx2, idx3]):
+                if abs(h_diff[r]) > 1e-9:
+                    direct_edges.append((idx, 0, 2.0 * abs(h_diff[r]), -1 if h_diff[r] > 0 else 1))
+            for (r, m), idx_pair in [((0, 1), (idx1, idx2)), ((1, 2), (idx2, idx3)), ((0, 2), (idx1, idx3))]:
+                coeff = J_diff[(r, m)]
+                if abs(coeff) > 1e-9:
+                    direct_edges.append((idx_pair[0], idx_pair[1], 2.0 * abs(coeff), -1 if coeff > 0 else 1))
+                    
+            effective_clauses.append((idx1, idx2, idx3, pi1, pi2, pi3, lambda_val))
+            
+    # Count pair frequencies among effective clauses (best shared pair heuristic)
+    pair_counts = {}
+    raw_eff = []
+    for idx1, idx2, idx3, pi1, pi2, pi3, lambda_val in effective_clauses:
+        p12 = (idx1, pi1, idx2, pi2)
+        p23 = (idx2, pi2, idx3, pi3)
+        p13 = (idx1, pi1, idx3, pi3)
+        for p in (p12, p23, p13):
+            pair_counts[p] = pair_counts.get(p, 0) + 1
+        raw_eff.append((idx1, idx2, idx3, pi1, pi2, pi3, lambda_val, p12, p23, p13))
+        
+    clause3_list = []
+    for idx1, idx2, idx3, pi1, pi2, pi3, lambda_val, p12, p23, p13 in raw_eff:
+        candidate_pairs = [p12, p13, p23]
+        candidate_pairs.sort(key=lambda p: (-pair_counts[p], p[0], p[2]))
+        chosen_pair = candidate_pairs[0]
+        
+        clause3_list.append({
+            'idx': [idx1, idx2, idx3],
+            'pol': [pi1, pi2, pi3],
+            'canonical_pair': chosen_pair,
+            'lambda': lambda_val
+        })
+        
     n_clause3 = len(clause3_list)
     adj = {i: [] for i in range(n_clause3)}
     for i in range(n_clause3):
@@ -224,8 +307,7 @@ def build_signed_graph_for_3sat(num_vars, active_vars, active_clauses, u=1.0, ve
         for clause_idx in comp:
             clause_to_merged_idx[clause_idx] = merged_node
             
-    edges = []
-    clause3_counter = 0
+    edges = list(direct_edges)
     for c in active_clauses:
         if len(c) == 1:
             lit = c[0]
@@ -241,23 +323,24 @@ def build_signed_graph_for_3sat(num_vars, active_vars, active_clauses, u=1.0, ve
             edges.append((idx1, 0, u / 2.0, pol1))
             edges.append((idx2, 0, u / 2.0, pol2))
             edges.append((idx1, idx2, u / 2.0, -pol1 * pol2))
-        elif len(c) == 3:
-            info = clause3_list[clause3_counter]
-            idx1, idx2, idx3 = info['idx']
-            pol1, pol2, pol3 = info['pol']
-            s = clause_to_merged_idx[clause3_counter]
             
-            edges.append((idx1, 0, u / 2.0, pol1))
-            edges.append((idx2, 0, u / 2.0, pol2))
-            edges.append((idx3, 0, u / 2.0, pol3))
-            edges.append((s, idx1, u / 2.0, pol1))
-            edges.append((s, idx2, u / 2.0, pol2))
-            edges.append((s, idx3, u / 2.0, pol3))
-            edges.append((s, 0, u / 2.0, -1))
-            edges.append((idx1, idx2, u / 2.0, -pol1 * pol2))
-            edges.append((idx2, idx3, u / 2.0, -pol2 * pol3))
-            edges.append((idx1, idx3, u / 2.0, -pol1 * pol3))
-            clause3_counter += 1
+    for clause3_counter in range(n_clause3):
+        info = clause3_list[clause3_counter]
+        idx1, idx2, idx3 = info['idx']
+        pol1, pol2, pol3 = info['pol']
+        s = clause_to_merged_idx[clause3_counter]
+        u_eff = info['lambda']
+        
+        edges.append((idx1, 0, u_eff / 2.0, pol1))
+        edges.append((idx2, 0, u_eff / 2.0, pol2))
+        edges.append((idx3, 0, u_eff / 2.0, pol3))
+        edges.append((s, idx1, u_eff / 2.0, pol1))
+        edges.append((s, idx2, u_eff / 2.0, pol2))
+        edges.append((s, idx3, u_eff / 2.0, pol3))
+        edges.append((s, 0, u_eff / 2.0, -1))
+        edges.append((idx1, idx2, u_eff / 2.0, -pol1 * pol2))
+        edges.append((idx2, idx3, u_eff / 2.0, -pol2 * pol3))
+        edges.append((idx1, idx3, u_eff / 2.0, -pol1 * pol3))
             
     total_nodes = N_red + 1 + n_merged_nodes
     # Initialize A as a sparse dict-of-dicts pre-populated with empty dicts for each node
@@ -288,9 +371,10 @@ def find_triangles(A, total_nodes):
                     triangles.append((u, v, w))
     return triangles
 
-def transfer_weights_to_triangles(A, triangles, total_nodes):
+def transfer_weights_to_triangles(A, triangles, total_nodes, lambda_T=0.1):
     """
     Formulates and solves the LP weight transfer to maximize triangle weights.
+    Applies lambda_T penalty to triangles containing T (node 0).
     Uses sparse matrix for the constraints to prevent memory issues.
     """
     edges_list = []
@@ -323,7 +407,12 @@ def transfer_weights_to_triangles(A, triangles, total_nodes):
         
     M_sparse = scipy.sparse.coo_matrix((data, (rows, cols)), shape=(Ne, Nt))
     
+    # Minimize -sum alpha_t * omega_t
     c = -np.ones(Nt, dtype=np.float64)
+    for t_idx, (i, j, k) in enumerate(triangles):
+        if i == 0 or j == 0 or k == 0:
+            c[t_idx] = -lambda_T
+            
     res = linprog(c, A_ub=M_sparse, b_ub=W, bounds=(0, None), method='highs')
     if res.success:
         omega = res.x
@@ -354,12 +443,14 @@ def optimize_auxiliaries(sigma, active_clauses, var_to_idx, clause3_list, clause
             L2 = pol2 * sigma[idx2]
             L3 = pol3 * sigma[idx3]
             
-            total_val += (1.0 - L1 - L2 - L3)
+            weight = info.get('lambda', 1.0)
+            total_val += weight * (1.0 - L1 - L2 - L3)
             
         if total_val >= 0.0:
             sigma[aux_node] = -1.0
         else:
             sigma[aux_node] = 1.0
+
 
 def find_root(i, parent):
     path = []
@@ -802,7 +893,7 @@ def perform_gel_and_get_clusters_numpy(beta, sigma, total_nodes, N_red, edges_li
     return clusters, parent, pinned_root, len(frozen_edges), n_frozen_residuals, n_frozen_triangles, largest_q, S_T
 
 
-def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, beta_init=0.5, target_q=0.10, exact_threshold=18, beta_T_factor=0.1, verbose=False, device='auto'):
+def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, beta_init=0.5, target_q=0.10, exact_threshold=10, beta_T_factor=0.1, lambda_T=0.1, verbose=False, device='auto'):
     """
     The full MCMC Higher-Order solver.
     Supports a device-agnostic PyTorch backend ('cuda', 'cpu') for GPU acceleration,
@@ -854,7 +945,7 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
     if verbose:
         print("Finding triangles and running LP weight transfer...")
     triangles = find_triangles(A, total_nodes)
-    omega, rho, edges_list, edge_to_idx = transfer_weights_to_triangles(A, triangles, total_nodes)
+    omega, rho, edges_list, edge_to_idx = transfer_weights_to_triangles(A, triangles, total_nodes, lambda_T=lambda_T)
     
     if verbose:
         nf_count = 0
