@@ -299,9 +299,9 @@ def run_all_benchmarks():
         "Instance",
         "CDCL (Glucose4)",
         "MaxSAT (RC2)",
-        "WalkSAT Pur (Target=0)",
+        "WalkSAT Pur (Ciblant Opt)",
         "MCMC HO Seul",
-        "MCMC HO + WalkSAT (Target=0)",
+        "MCMC HO + WalkSAT (Ciblant Opt)",
         "WalkSAT Pur (Ciblant MCMC HO Unsat)",
         "Flips Gagnés (%)"
     ]
@@ -323,16 +323,22 @@ def run_all_benchmarks():
         rc2_res, t_rc2, rc2_unsat = solve_maxsat_with_rc2(n_vars, clauses)
         print(f"RC2 MaxSAT: {rc2_res} en {t_rc2:.4f}s")
         
-        # 3. WalkSAT Pur (Target=0)
-        _, pure_zero_unsat, t_pure_zero, flips_pure_zero = run_walksat(None, clauses, n_vars, max_flips=300000, target_unsat=0, max_time=10.0)
-        print(f"WalkSAT Pur (Target=0): Unsat = {pure_zero_unsat} en {t_pure_zero:.4f}s ({flips_pure_zero} flips)")
+        # Determine actual optimum target
+        if rc2_unsat >= 0:
+            target_val = rc2_unsat
+        else:
+            target_val = 0 if glu_res == "SAT" else 1
+            
+        # 3. WalkSAT Pur (Target = target_val)
+        _, pure_zero_unsat, t_pure_zero, flips_pure_zero = run_walksat(None, clauses, n_vars, max_flips=300000, target_unsat=target_val, max_time=10.0)
+        print(f"WalkSAT Pur (Ciblant Optimum={target_val}): Unsat = {pure_zero_unsat} en {t_pure_zero:.4f}s ({flips_pure_zero} flips)")
         
         # 4. MCMC HO Seul
         ho_spins, t_ho, ho_unsat = solve_3sat_mcmc_higher_order(n_vars, clauses, max_sweeps=300, u_sat=1.0)
         print(f"MCMC HO Seul: Unsat = {ho_unsat} en {t_ho:.4f}s")
         
-        # 5. MCMC HO + WalkSAT
-        ho_walk_spins, ho_walk_unsat, t_ho_walk, flips_ho_walk = run_walksat(ho_spins, clauses, n_vars, max_flips=300000, target_unsat=0, max_time=10.0)
+        # 5. MCMC HO + WalkSAT (Target = target_val)
+        ho_walk_spins, ho_walk_unsat, t_ho_walk, flips_ho_walk = run_walksat(ho_spins, clauses, n_vars, max_flips=300000, target_unsat=target_val, max_time=10.0)
         t_total_ho_walk = t_ho + t_ho_walk
         print(f"MCMC HO + WalkSAT: Unsat = {ho_walk_unsat} en {t_total_ho_walk:.4f}s (WalkSAT: {t_ho_walk:.4f}s, {flips_ho_walk} flips)")
         
@@ -340,8 +346,7 @@ def run_all_benchmarks():
         _, pure_target_unsat, t_pure_target, flips_pure_target = run_walksat(None, clauses, n_vars, max_flips=300000, target_unsat=ho_unsat, max_time=10.0)
         print(f"WalkSAT Pur (Ciblant {ho_unsat} unsat): Unsat = {pure_target_unsat} en {t_pure_target:.4f}s ({flips_pure_target} flips)")
         
-        # Calculate iteration/flip savings (if targeting 0)
-        # We compare flips of Pure WalkSAT (Target=0) vs. (MCMC HO + WalkSAT)
+        # Calculate iteration/flip savings (if targeting target_val)
         if flips_pure_zero > 0:
             flips_saved_pct = ((flips_pure_zero - flips_ho_walk) / flips_pure_zero) * 100.0
             flips_saved_str = f"{flips_saved_pct:.1f}%"
@@ -352,9 +357,9 @@ def run_all_benchmarks():
         cell_instance = f"**{name}**<br>({n_vars} vars, {n_clauses} clauses)"
         cell_cdcl = f"{glu_res}<br>{t_glu:.4f}s"
         cell_rc2 = f"OPT Unsat: {rc2_unsat}<br>{t_rc2:.4f}s" if rc2_unsat >= 0 else "Skipped"
-        cell_pure_zero = f"Unsat: {pure_zero_unsat}<br>{t_pure_zero:.4f}s<br>({flips_pure_zero} flips)"
+        cell_pure_zero = f"Unsat: {pure_zero_unsat} (Cible: {target_val})<br>{t_pure_zero:.4f}s<br>({flips_pure_zero} flips)"
         cell_ho = f"Unsat: {ho_unsat}<br>{t_ho:.4f}s"
-        cell_ho_walk = f"Unsat: {ho_walk_unsat}<br>**{t_total_ho_walk:.4f}s**<br>({flips_ho_walk} flips)"
+        cell_ho_walk = f"Unsat: {ho_walk_unsat} (Cible: {target_val})<br>**{t_total_ho_walk:.4f}s**<br>({flips_ho_walk} flips)"
         cell_pure_target = f"Unsat: {pure_target_unsat}<br>{t_pure_target:.4f}s<br>({flips_pure_target} flips)"
         
         row_str = f"| {cell_instance} | {cell_cdcl} | {cell_rc2} | {cell_pure_zero} | {cell_ho} | {cell_ho_walk} | {cell_pure_target} | {flips_saved_str} |"
