@@ -5,6 +5,12 @@ import scipy.sparse
 import scipy.sparse.linalg
 from scipy.optimize import linprog
 
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
+
 def recursive_unit_propagation_and_reductions(num_vars, clauses, active_vars=None, verbose=False):
     """
     Recursively applies unit propagation and pure literal elimination.
@@ -587,42 +593,60 @@ def count_unsat_clauses(spins, clauses):
             unsat_count += 1
     return unsat_count
 
-def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, beta_init=0.5, target_q=0.10, exact_threshold=18, verbose=False):
+def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, beta_init=0.5, target_q=0.10, exact_threshold=18, verbose=False, device='auto'):
     """
     The full MCMC Higher-Order solver.
+    Supports a device-agnostic PyTorch backend ('cuda', 'cpu') for GPU acceleration,
+    and a native NumPy CPU backend ('numpy').
     """
     t_start = time.time()
     
+    if device == 'auto':
+        if HAS_TORCH and torch.cuda.is_available():
+            device = 'cuda'
+        else:
+            device = 'numpy'
+            
+    if device != 'numpy' and not HAS_TORCH:
+        if verbose:
+            print("Warning: PyTorch is not installed. Falling back to NumPy CPU backend.")
+        device = 'numpy'
+        
     # 1. Preprocessing
+    if verbose:
+        print("\n=== MCMC Higher-Order Solver Preprocessing ===")
+        print(f"Input formula: {num_vars} variables, {len(clauses)} clauses")
+        
     active_vars, active_clauses, fixed_literals, fixed_empty_clauses = \
         recursive_unit_propagation_and_reductions(num_vars, clauses, verbose=verbose)
         
+    if verbose:
+        print(f"After reductions: {len(active_vars)} active variables, {len(active_clauses)} active clauses")
+        print(f"Fixed literals: {len(fixed_literals)} | Fixed empty clauses: {fixed_empty_clauses}")
+        
     if len(active_vars) == 0:
         spins = {v: fixed_literals.get(v, 1) for v in range(1, num_vars + 1)}
+        if verbose:
+            print("Formula solved in preprocessing.")
         return spins, time.time() - t_start, fixed_empty_clauses
         
     # 2. Extended Graph construction
+    if verbose:
+        print("Constructing extended signed graph...")
     A, var_to_idx, clause3_list, clause_to_merged_idx = \
         build_signed_graph_for_3sat(num_vars, active_vars, active_clauses, u=u_sat, verbose=verbose)
     total_nodes = A.shape[0]
     N_red = len(active_vars)
     
     # 3. Triangles and LP Transfer
+    if verbose:
+        print("Finding triangles and running LP weight transfer...")
     triangles = find_triangles(A)
     omega, rho, edges_list, edge_to_idx = transfer_weights_to_triangles(A, triangles)
     
-    # 4. Initialize spins
-    sigma = np.ones(total_nodes, dtype=float)
-    # Initialize variables randomly using NumPy vectorization
-    sigma[1:N_red + 1] = np.random.choice([-1.0, 1.0], size=N_red)
-    sigma[0] = 1.0 # reference T
-    optimize_auxiliaries(sigma, active_clauses, var_to_idx, clause3_list, clause_to_merged_idx)
-    
-    best_spins = extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars)
-    best_unsat = count_unsat_clauses(best_spins, clauses)
-    
-    if best_unsat == 0:
-        return best_spins, time.time() - t_start, 0
+    if verbose:
+        print(f"Found {len(triangles)} triangles.")
+        print(f"LP Transfer: mass on triangles = {np.sum(omega):.4f} | residual edge mass = {np.sum(rho):.4f}")
         
     # Precompute edge signs and triangle properties to avoid overhead in the sweep loop
     epsilon_edges = np.array([np.sign(A[u, v]) for u, v in edges_list])
@@ -638,117 +662,417 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
         p_t = eps1 * eps2 * eps3
         precomputed_triangles.append((e1, e2, e3, eps1, eps2, eps3, p_t))
         
-    beta = beta_init
-    observed_sizes = []
-    
-    for sweep in range(1, max_sweeps + 1):
-        frozen_edges = []
+    # BACKEND: PyTorch (CPU or GPU/CUDA)
+    if device != 'numpy':
+        device_obj = torch.device(device)
+        if verbose:
+            print(f"Running MCMC sweeps on PyTorch device: {device_obj}")
+            
+        Ne = len(edges_list)
+        Nt_active = len(precomputed_triangles)
         
-        # 1. Gel of residual edges
-        for idx, (u, v) in enumerate(edges_list):
-            if epsilon_edges[idx] * sigma[u] * sigma[v] == 1.0:
-                p_gel = 1.0 - np.exp(-beta * rho[idx])
-                if random.random() < p_gel:
-                    frozen_edges.append((u, v))
-                    
-        # 2. Gel of triangles
+        # Move precomputations to PyTorch
+        edges_src_np = np.array([e[0] for e in edges_list], dtype=np.int64) if Ne > 0 else np.zeros(0, dtype=np.int64)
+        edges_dst_np = np.array([e[1] for e in edges_list], dtype=np.int64) if Ne > 0 else np.zeros(0, dtype=np.int64)
+        
+        edges_src = torch.tensor(edges_src_np, dtype=torch.long, device=device_obj)
+        edges_dst = torch.tensor(edges_dst_np, dtype=torch.long, device=device_obj)
+        epsilon_edges_torch = torch.tensor(epsilon_edges, dtype=torch.float32, device=device_obj)
+        rho_torch = torch.tensor(rho, dtype=torch.float32, device=device_obj)
+        
+        t_e1_src_list, t_e1_dst_list = [], []
+        t_e2_src_list, t_e2_dst_list = [], []
+        t_e3_src_list, t_e3_dst_list = [], []
+        t_eps1_list, t_eps2_list, t_eps3_list = [], [], []
+        t_omega_list = []
+        t_pt_list = []
+        
         for t_idx, (e1, e2, e3, eps1, eps2, eps3, p_t) in enumerate(precomputed_triangles):
-            omega_t = omega[t_idx]
-            if omega_t < 1e-9:
+            t_e1_src_list.append(e1[0])
+            t_e1_dst_list.append(e1[1])
+            t_e2_src_list.append(e2[0])
+            t_e2_dst_list.append(e2[1])
+            t_e3_src_list.append(e3[0])
+            t_e3_dst_list.append(e3[1])
+            t_eps1_list.append(eps1)
+            t_eps2_list.append(eps2)
+            t_eps3_list.append(eps3)
+            t_omega_list.append(omega[t_idx])
+            t_pt_list.append(p_t)
+            
+        if Nt_active > 0:
+            t_e1_src = torch.tensor(t_e1_src_list, dtype=torch.long, device=device_obj)
+            t_e1_dst = torch.tensor(t_e1_dst_list, dtype=torch.long, device=device_obj)
+            t_e2_src = torch.tensor(t_e2_src_list, dtype=torch.long, device=device_obj)
+            t_e2_dst = torch.tensor(t_e2_dst_list, dtype=torch.long, device=device_obj)
+            t_e3_src = torch.tensor(t_e3_src_list, dtype=torch.long, device=device_obj)
+            t_e3_dst = torch.tensor(t_e3_dst_list, dtype=torch.long, device=device_obj)
+            
+            t_eps1 = torch.tensor(t_eps1_list, dtype=torch.float32, device=device_obj)
+            t_eps2 = torch.tensor(t_eps2_list, dtype=torch.float32, device=device_obj)
+            t_eps3 = torch.tensor(t_eps3_list, dtype=torch.float32, device=device_obj)
+            t_omega = torch.tensor(t_omega_list, dtype=torch.float32, device=device_obj)
+            t_pt = torch.tensor(t_pt_list, dtype=torch.float32, device=device_obj)
+        else:
+            t_e1_src = torch.zeros(0, dtype=torch.long, device=device_obj)
+            t_e1_dst = torch.zeros(0, dtype=torch.long, device=device_obj)
+            t_e2_src = torch.zeros(0, dtype=torch.long, device=device_obj)
+            t_e2_dst = torch.zeros(0, dtype=torch.long, device=device_obj)
+            t_e3_src = torch.zeros(0, dtype=torch.long, device=device_obj)
+            t_e3_dst = torch.zeros(0, dtype=torch.long, device=device_obj)
+            t_eps1 = torch.zeros(0, dtype=torch.float32, device=device_obj)
+            t_eps2 = torch.zeros(0, dtype=torch.float32, device=device_obj)
+            t_eps3 = torch.zeros(0, dtype=torch.float32, device=device_obj)
+            t_omega = torch.zeros(0, dtype=torch.float32, device=device_obj)
+            t_pt = torch.zeros(0, dtype=torch.float32, device=device_obj)
+            
+        # Initialize spins
+        sigma_torch = torch.ones(total_nodes, dtype=torch.float32, device=device_obj)
+        sigma_torch[1:N_red + 1] = (torch.rand(N_red, device=device_obj) > 0.5).float() * 2.0 - 1.0
+        sigma_torch[0] = 1.0
+        
+        # Optimize auxiliaries initially on CPU
+        sigma = sigma_torch.cpu().numpy()
+        optimize_auxiliaries(sigma, active_clauses, var_to_idx, clause3_list, clause_to_merged_idx)
+        sigma_torch = torch.tensor(sigma, dtype=torch.float32, device=device_obj)
+        
+        best_spins = extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars)
+        best_unsat = count_unsat_clauses(best_spins, clauses)
+        
+        if best_unsat == 0:
+            return best_spins, time.time() - t_start, 0
+            
+        beta = beta_init
+        observed_sizes = []
+        
+        if verbose:
+            print("\n=== Starting MCMC Sweeps (PyTorch Backend) ===")
+            
+        for sweep in range(1, max_sweeps + 1):
+            frozen_edges_src = []
+            frozen_edges_dst = []
+            n_frozen_residuals = 0
+            
+            # 1. Gel of residual edges
+            if Ne > 0:
+                y = epsilon_edges_torch * sigma_torch[edges_src] * sigma_torch[edges_dst]
+                probs = 1.0 - torch.exp(-beta * rho_torch)
+                freeze_mask = (y == 1.0) & (torch.rand(Ne, device=device_obj) < probs)
+                
+                frozen_edges_src.append(edges_src[freeze_mask])
+                frozen_edges_dst.append(edges_dst[freeze_mask])
+                n_frozen_residuals = int(torch.sum(freeze_mask).item())
+                
+            # 2. Gel of triangles
+            n_frozen_triangles = 0
+            if Nt_active > 0:
+                y1 = t_eps1 * sigma_torch[t_e1_src] * sigma_torch[t_e1_dst]
+                y2 = t_eps2 * sigma_torch[t_e2_src] * sigma_torch[t_e2_dst]
+                y3 = t_eps3 * sigma_torch[t_e3_src] * sigma_torch[t_e3_dst]
+                
+                # Non-frustrated
+                satisfied_nf = (t_pt == 1.0) & (y1 == 1.0) & (y2 == 1.0) & (y3 == 1.0) & (t_omega >= 1e-9)
+                probs_nf = 1.0 - torch.exp(-2.0 * beta * t_omega)
+                freeze_nf = satisfied_nf & (torch.rand(Nt_active, device=device_obj) < probs_nf)
+                
+                frozen_edges_src.extend([t_e1_src[freeze_nf], t_e2_src[freeze_nf], t_e3_src[freeze_nf]])
+                frozen_edges_dst.extend([t_e1_dst[freeze_nf], t_e2_dst[freeze_nf], t_e3_dst[freeze_nf]])
+                n_frozen_triangles += int(torch.sum(freeze_nf).item()) * 3
+                
+                # Frustrated
+                sat_count = (y1 == 1.0).float() + (y2 == 1.0).float() + (y3 == 1.0).float()
+                state_bas = (t_pt == -1.0) & (sat_count == 2.0) & (t_omega >= 1e-9)
+                probs_f = 1.0 - torch.exp(-2.0 * beta * t_omega)
+                freeze_f = state_bas & (torch.rand(Nt_active, device=device_obj) < probs_f)
+                
+                r = torch.rand(Nt_active, device=device_obj)
+                
+                # Case A
+                mask_A = freeze_f & (y1 == 1.0) & (y2 == 1.0)
+                src_A = torch.where(r < 0.5, t_e1_src, t_e2_src)
+                dst_A = torch.where(r < 0.5, t_e1_dst, t_e2_dst)
+                frozen_edges_src.append(src_A[mask_A])
+                frozen_edges_dst.append(dst_A[mask_A])
+                n_frozen_triangles += int(torch.sum(mask_A).item())
+                
+                # Case B
+                mask_B = freeze_f & (y2 == 1.0) & (y3 == 1.0)
+                src_B = torch.where(r < 0.5, t_e2_src, t_e3_src)
+                dst_B = torch.where(r < 0.5, t_e2_dst, t_e3_dst)
+                frozen_edges_src.append(src_B[mask_B])
+                frozen_edges_dst.append(dst_B[mask_B])
+                n_frozen_triangles += int(torch.sum(mask_B).item())
+                
+                # Case C
+                mask_C = freeze_f & (y1 == 1.0) & (y3 == 1.0)
+                src_C = torch.where(r < 0.5, t_e1_src, t_e3_src)
+                dst_C = torch.where(r < 0.5, t_e1_dst, t_e3_dst)
+                frozen_edges_src.append(src_C[mask_C])
+                frozen_edges_dst.append(dst_C[mask_C])
+                n_frozen_triangles += int(torch.sum(mask_C).item())
+                
+            if frozen_edges_src:
+                src_all = torch.cat(frozen_edges_src)
+                dst_all = torch.cat(frozen_edges_dst)
+                n_frozen_total = src_all.numel()
+            else:
+                src_all = torch.zeros(0, dtype=torch.long, device=device_obj)
+                dst_all = torch.zeros(0, dtype=torch.long, device=device_obj)
+                n_frozen_total = 0
+                
+            # 3. Construct clusters (Label Propagation in PyTorch)
+            parent_arr = np.arange(total_nodes)
+            if src_all.numel() > 0:
+                sym_src = torch.cat([src_all, dst_all])
+                sym_dst = torch.cat([dst_all, src_all])
+                
+                labels = torch.arange(total_nodes, device=device_obj)
+                for _ in range(100):
+                    labels_next = torch.scatter_reduce(labels, 0, sym_dst, labels[sym_src], reduce='amax', include_self=True)
+                    if torch.equal(labels, labels_next):
+                        break
+                    labels = labels_next
+                parent_arr = labels.cpu().numpy()
+                
+            clusters = {}
+            for i in range(total_nodes):
+                root = parent_arr[i]
+                if root not in clusters:
+                    clusters[root] = []
+                clusters[root].append(i)
+                
+            pinned_root = parent_arr[0]
+            
+            largest_q = get_largest_flippable_cluster_proportion(clusters, pinned_root, N_red)
+            observed_sizes.append(largest_q)
+            
+            if sweep % 15 == 0:
+                beta = update_beta(beta, observed_sizes, target=target_q)
+                observed_sizes = []
+                
+            # 4. Build reduced MaxSAT problem on cluster flips
+            sigma = sigma_torch.cpu().numpy()
+            full_sigma = extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars)
+            reduced_clauses = build_reduced_problem(clauses, full_sigma, parent_arr, pinned_root, var_to_idx)
+            reduced_clauses = [rc for rc in reduced_clauses if len(rc['forbidden']) > 0]
+            
+            flippable_roots = [r for r in clusters.keys() if r != pinned_root]
+            m = len(flippable_roots)
+            
+            if m == 0:
+                if verbose:
+                    print(f"Sweep {sweep:3d}/{max_sweeps} | Beta: {beta:.3f} | All variables pinned.")
                 continue
                 
-            y1 = eps1 * sigma[e1[0]] * sigma[e1[1]]
-            y2 = eps2 * sigma[e2[0]] * sigma[e2[1]]
-            y3 = eps3 * sigma[e3[0]] * sigma[e3[1]]
+            root_to_idx = {r: i for i, r in enumerate(flippable_roots)}
             
-            if p_t == 1.0: # Non-frustrated
-                if y1 == 1.0 and y2 == 1.0 and y3 == 1.0:
-                    p_gel = 1.0 - np.exp(-2.0 * beta * omega_t)
-                    if random.random() < p_gel:
-                        frozen_edges.extend([e1, e2, e3])
-            else: # Frustrated
-                satisfied_edges = []
-                if y1 == 1.0: satisfied_edges.append(e1)
-                if y2 == 1.0: satisfied_edges.append(e2)
-                if y3 == 1.0: satisfied_edges.append(e3)
-                
-                if len(satisfied_edges) == 2:
-                    p_gel = 1.0 - np.exp(-2.0 * beta * omega_t)
-                    if random.random() < p_gel:
-                        e_freeze = random.choice(satisfied_edges)
-                        frozen_edges.append(e_freeze)
-                        
-        # 3. Construct clusters (Union-Find)
-        parent = {i: i for i in range(total_nodes)}
-        
-        for u, v in frozen_edges:
-            union(u, v, parent)
-            
-        clusters = {}
-        for i in range(total_nodes):
-            root = find_root(i, parent)
-            if root not in clusters:
-                clusters[root] = []
-            clusters[root].append(i)
-            
-        pinned_root = find_root(0, parent)
-        
-        # Adaptation of beta
-        largest_q = get_largest_flippable_cluster_proportion(clusters, pinned_root, N_red)
-        observed_sizes.append(largest_q)
-        
-        if sweep % 15 == 0:
-            beta = update_beta(beta, observed_sizes, target=target_q)
-            observed_sizes = []
-            
-        # 4. Build reduced MaxSAT problem on cluster flips
-        full_sigma = extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars)
-        reduced_clauses = build_reduced_problem(clauses, full_sigma, parent, pinned_root, var_to_idx)
-        reduced_clauses = [rc for rc in reduced_clauses if len(rc['forbidden']) > 0]
-        
-        flippable_roots = [r for r in clusters.keys() if r != pinned_root]
-        m = len(flippable_roots)
-        
-        if m == 0:
-            # All variables are pinned, no flip is possible.
-            continue
-            
-        root_to_idx = {r: i for i, r in enumerate(flippable_roots)}
-        
-        # 5. Solve reduced problem
-        if m <= exact_threshold:
-            z_best = solve_reduced_exhaustive(reduced_clauses, m, root_to_idx)
-        else:
-            z_best = solve_reduced_walksat(reduced_clauses, m, root_to_idx)
-            
-        # 6. Apply flips
-        for idx in range(1, total_nodes):
-            r = find_root(idx, parent)
-            if r == pinned_root:
-                z_val = 1
+            # 5. Solve reduced problem
+            solver_type = 'Exhaustive'
+            if m <= exact_threshold:
+                z_best = solve_reduced_exhaustive(reduced_clauses, m, root_to_idx)
             else:
-                z_val = z_best[root_to_idx[r]]
-            sigma[idx] = z_val * sigma[idx]
+                solver_type = 'WalkSAT'
+                z_best = solve_reduced_walksat(reduced_clauses, m, root_to_idx)
+                
+            # 6. Apply flips
+            for idx in range(1, total_nodes):
+                r = parent_arr[idx]
+                if r == pinned_root:
+                    z_val = 1
+                else:
+                    z_val = z_best[root_to_idx[r]]
+                sigma[idx] = z_val * sigma[idx]
+                
+            sigma[0] = 1.0 # Ensure T remains +1
+            optimize_auxiliaries(sigma, active_clauses, var_to_idx, clause3_list, clause_to_merged_idx)
+            sigma_torch = torch.tensor(sigma, dtype=torch.float32, device=device_obj)
             
-        sigma[0] = 1.0 # Ensure T remains +1
+            # 7. Evaluate SAT score
+            curr_spins = extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars)
+            curr_unsat = count_unsat_clauses(curr_spins, clauses)
+            
+            pinned_size = len(clusters.get(pinned_root, []))
+            largest_flippable_size = int(largest_q * N_red)
+            
+            if verbose:
+                print(f"Sweep {sweep:3d}/{max_sweeps} | Beta: {beta:.3f} | Frozen edges: {n_frozen_total:4d} (res: {n_frozen_residuals:3d}, tri: {n_frozen_triangles:3d}) | "
+                      f"Clusters: {len(clusters):3d} | Pinned K_T: {pinned_size:3d} | Max Flip: {largest_flippable_size:3d} ({largest_q*100.0:.1f}%) | "
+                      f"Flippable m: {m:3d} ({solver_type}) | UNSAT: {curr_unsat:3d} (best: {best_unsat:3d})")
+                      
+            if curr_unsat < best_unsat:
+                best_unsat = curr_unsat
+                best_spins = curr_spins
+                if verbose:
+                    print(f"  *** [NEW RECORD] Sweep {sweep}: Best UNSAT count is now {best_unsat} ***")
+                if best_unsat == 0:
+                    break
+                    
+            # 8. Periodic restarts if stymied
+            if sweep % 80 == 0 and best_unsat > 0:
+                if verbose:
+                    print(f"  *** [RESTART] Stagnation detected. Perturbing 30% of original spins. ***")
+                mask = np.random.random(N_red) < 0.3
+                sigma[1:N_red + 1][mask] = np.random.choice([-1.0, 1.0], size=np.sum(mask))
+                optimize_auxiliaries(sigma, active_clauses, var_to_idx, clause3_list, clause_to_merged_idx)
+                sigma_torch = torch.tensor(sigma, dtype=torch.float32, device=device_obj)
+                
+        t_elapsed = time.time() - t_start
+        if verbose:
+            print(f"=== Solver finished in {t_elapsed:.4f}s. Best UNSAT: {best_unsat} ===")
+        return best_spins, t_elapsed, best_unsat
+
+    # BACKEND: NumPy (Native CPU)
+    else:
+        if verbose:
+            print("Running MCMC sweeps on NumPy CPU backend")
+            
+        # 4. Initialize spins
+        sigma = np.ones(total_nodes, dtype=float)
+        sigma[1:N_red + 1] = np.random.choice([-1.0, 1.0], size=N_red)
+        sigma[0] = 1.0
         optimize_auxiliaries(sigma, active_clauses, var_to_idx, clause3_list, clause_to_merged_idx)
         
-        # 7. Evaluate SAT score
-        curr_spins = extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars)
-        curr_unsat = count_unsat_clauses(curr_spins, clauses)
+        best_spins = extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars)
+        best_unsat = count_unsat_clauses(best_spins, clauses)
         
-        if curr_unsat < best_unsat:
-            best_unsat = curr_unsat
-            best_spins = curr_spins
-            if best_unsat == 0:
-                break
+        if best_unsat == 0:
+            return best_spins, time.time() - t_start, 0
+            
+        beta = beta_init
+        observed_sizes = []
+        
+        if verbose:
+            print("\n=== Starting MCMC Sweeps (NumPy CPU Backend) ===")
+            
+        for sweep in range(1, max_sweeps + 1):
+            frozen_edges = []
+            n_frozen_residuals = 0
+            n_frozen_triangles = 0
+            
+            # 1. Gel of residual edges
+            for idx, (u, v) in enumerate(edges_list):
+                if epsilon_edges[idx] * sigma[u] * sigma[v] == 1.0:
+                    p_gel = 1.0 - np.exp(-beta * rho[idx])
+                    if random.random() < p_gel:
+                        frozen_edges.append((u, v))
+                        n_frozen_residuals += 1
+                        
+            # 2. Gel of triangles
+            for t_idx, (e1, e2, e3, eps1, eps2, eps3, p_t) in enumerate(precomputed_triangles):
+                omega_t = omega[t_idx]
+                if omega_t < 1e-9:
+                    continue
+                    
+                y1 = eps1 * sigma[e1[0]] * sigma[e1[1]]
+                y2 = eps2 * sigma[e2[0]] * sigma[e2[1]]
+                y3 = eps3 * sigma[e3[0]] * sigma[e3[1]]
                 
-        # 8. Periodic restarts if stymied
-        if sweep % 80 == 0 and best_unsat > 0:
-            # Soft perturbation: restart 30% of original variables randomly using NumPy
-            mask = np.random.random(N_red) < 0.3
-            sigma[1:N_red + 1][mask] = np.random.choice([-1.0, 1.0], size=np.sum(mask))
+                if p_t == 1.0: # Non-frustrated
+                    if y1 == 1.0 and y2 == 1.0 and y3 == 1.0:
+                        p_gel = 1.0 - np.exp(-2.0 * beta * omega_t)
+                        if random.random() < p_gel:
+                            frozen_edges.extend([e1, e2, e3])
+                            n_frozen_triangles += 3
+                else: # Frustrated
+                    satisfied_edges = []
+                    if y1 == 1.0: satisfied_edges.append(e1)
+                    if y2 == 1.0: satisfied_edges.append(e2)
+                    if y3 == 1.0: satisfied_edges.append(e3)
+                    
+                    if len(satisfied_edges) == 2:
+                        p_gel = 1.0 - np.exp(-2.0 * beta * omega_t)
+                        if random.random() < p_gel:
+                            e_freeze = random.choice(satisfied_edges)
+                            frozen_edges.append(e_freeze)
+                            n_frozen_triangles += 1
+                            
+            # 3. Construct clusters (Union-Find)
+            parent = {i: i for i in range(total_nodes)}
+            
+            for u, v in frozen_edges:
+                union(u, v, parent)
+                
+            clusters = {}
+            for i in range(total_nodes):
+                root = find_root(i, parent)
+                if root not in clusters:
+                    clusters[root] = []
+                clusters[root].append(i)
+                
+            pinned_root = find_root(0, parent)
+            
+            largest_q = get_largest_flippable_cluster_proportion(clusters, pinned_root, N_red)
+            observed_sizes.append(largest_q)
+            
+            if sweep % 15 == 0:
+                beta = update_beta(beta, observed_sizes, target=target_q)
+                observed_sizes = []
+                
+            # 4. Build reduced MaxSAT problem on cluster flips
+            full_sigma = extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars)
+            reduced_clauses = build_reduced_problem(clauses, full_sigma, parent, pinned_root, var_to_idx)
+            reduced_clauses = [rc for rc in reduced_clauses if len(rc['forbidden']) > 0]
+            
+            flippable_roots = [r for r in clusters.keys() if r != pinned_root]
+            m = len(flippable_roots)
+            
+            if m == 0:
+                if verbose:
+                    print(f"Sweep {sweep:3d}/{max_sweeps} | Beta: {beta:.3f} | All variables pinned.")
+                continue
+                
+            root_to_idx = {r: i for i, r in enumerate(flippable_roots)}
+            
+            # 5. Solve reduced problem
+            solver_type = 'Exhaustive'
+            if m <= exact_threshold:
+                z_best = solve_reduced_exhaustive(reduced_clauses, m, root_to_idx)
+            else:
+                solver_type = 'WalkSAT'
+                z_best = solve_reduced_walksat(reduced_clauses, m, root_to_idx)
+                
+            # 6. Apply flips
+            for idx in range(1, total_nodes):
+                r = find_root(idx, parent)
+                if r == pinned_root:
+                    z_val = 1
+                else:
+                    z_val = z_best[root_to_idx[r]]
+                sigma[idx] = z_val * sigma[idx]
+                
+            sigma[0] = 1.0 # Ensure T remains +1
             optimize_auxiliaries(sigma, active_clauses, var_to_idx, clause3_list, clause_to_merged_idx)
             
-    t_elapsed = time.time() - t_start
-    return best_spins, t_elapsed, best_unsat
+            # 7. Evaluate SAT score
+            curr_spins = extract_full_assignment(sigma, var_to_idx, fixed_literals, num_vars)
+            curr_unsat = count_unsat_clauses(curr_spins, clauses)
+            
+            pinned_size = len(clusters.get(pinned_root, []))
+            largest_flippable_size = int(largest_q * N_red)
+            n_frozen_total = len(frozen_edges)
+            
+            if verbose:
+                print(f"Sweep {sweep:3d}/{max_sweeps} | Beta: {beta:.3f} | Frozen edges: {n_frozen_total:4d} (res: {n_frozen_residuals:3d}, tri: {n_frozen_triangles:3d}) | "
+                      f"Clusters: {len(clusters):3d} | Pinned K_T: {pinned_size:3d} | Max Flip: {largest_flippable_size:3d} ({largest_q*100.0:.1f}%) | "
+                      f"Flippable m: {m:3d} ({solver_type}) | UNSAT: {curr_unsat:3d} (best: {best_unsat:3d})")
+                      
+            if curr_unsat < best_unsat:
+                best_unsat = curr_unsat
+                best_spins = curr_spins
+                if verbose:
+                    print(f"  *** [NEW RECORD] Sweep {sweep}: Best UNSAT count is now {best_unsat} ***")
+                if best_unsat == 0:
+                    break
+                    
+            # 8. Periodic restarts if stymied
+            if sweep % 80 == 0 and best_unsat > 0:
+                if verbose:
+                    print(f"  *** [RESTART] Stagnation detected. Perturbing 30% of original spins. ***")
+                mask = np.random.random(N_red) < 0.3
+                sigma[1:N_red + 1][mask] = np.random.choice([-1.0, 1.0], size=np.sum(mask))
+                optimize_auxiliaries(sigma, active_clauses, var_to_idx, clause3_list, clause_to_merged_idx)
+                
+        t_elapsed = time.time() - t_start
+        if verbose:
+            print(f"=== Solver finished in {t_elapsed:.4f}s. Best UNSAT: {best_unsat} ===")
+        return best_spins, t_elapsed, best_unsat

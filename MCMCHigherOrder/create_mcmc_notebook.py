@@ -19,7 +19,7 @@ def create_mcmc_notebook():
             "cell_type": "markdown",
             "metadata": {},
             "source": [
-                "# Solveur MCMC Higher-Order pour 3-SAT\n",
+                "# Solveur MCMC Higher-Order pour 3-SAT (Optimisé GPU & Tracing)\n",
                 "\n",
                 "Ce notebook implémente et évalue un solveur MCMC \"higher-order\" pour le problème 3-SAT, basé sur le document de spécification [main.md](file:///workspaces/3-SAT/MCMCHigherOrder/main.md).\n",
                 "\n",
@@ -29,9 +29,10 @@ def create_mcmc_notebook():
                 "2. **Compensation** : Fusion et compensation algébrique des poids signés d'arêtes opposées.\n",
                 "3. **Transfert LP** : Résolution d'un programme linéaire pour maximiser le transfert d'énergie des arêtes vers les triangles.\n",
                 "4. **Dynamique Swendsen-Wang Higher-Order** : Gel probabiliste des arêtes résiduelles et des triangles (frustrés et non frustrés).\n",
-                "5. **Union-Find & Partitionnement** : Construction de clusters de spins cohérents, en fixant le cluster contenant le spin de référence $T$.\n",
+                "5. **Partitionnement en Clusters** : Identification des composantes connexes gelées. L'implémentation supporte un backend PyTorch pour paralléliser le calcul des gels et la propagation de labels (Union-Find) sur GPU CUDA si disponible.\n",
                 "6. **Problème Réduit sur Flips de Clusters** : Résolution locale (exacte ou via WalkSAT réduit) pour décider des flips de chaque cluster.\n",
-                "7. **Réoptimisation locale des auxiliaires** et conservation de la meilleure configuration SAT globale."
+                "7. **Réoptimisation locale des auxiliaires** et conservation de la meilleure configuration SAT globale.\n",
+                "8. **Mode Verbose** : Affiche un suivi ultra-détaillé de chaque sweep (température, liaisons gelées, taille des clusters, décisions du solveur de flips, etc.)."
             ]
         },
         {
@@ -154,8 +155,11 @@ def create_mcmc_notebook():
             "execution_count": None,
             "metadata": {},
             "source": [
-                "best_spins, t_ho, ho_unsat = solve_3sat_mcmc_higher_order(n_vars, clauses, max_sweeps=100, verbose=True)\n",
-                "print(f\"\\nRésultat MCMC Higher-Order Seul : {ho_unsat} clauses insatisfaites en {t_ho:.4f}s.\")"
+                "import torch\n",
+                "device = 'cuda' if torch.cuda.is_available() else 'cpu'\n",
+                "print(f\"Device sélectionné pour PyTorch : {device} (GPU disponible : {torch.cuda.is_available()})\\n\")\n",
+                "best_spins, t_ho, ho_unsat = solve_3sat_mcmc_higher_order(n_vars, clauses, max_sweeps=100, verbose=True, device=device)\n",
+                "print(f\"\\nRésultat MCMC Higher-Order Seul : {ho_unsat} clauses insatisfaites en {t_ho:.4f}s sur {device}.\")"
             ]
         }
     ]
