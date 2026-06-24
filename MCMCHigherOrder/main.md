@@ -313,7 +313,7 @@ nombre en mutualisant certaines clauses, mais seulement avec une règle stricte 
 
 ```math
 \boxed{
-\text{mutualiser uniquement des clauses ayant la même paire orientée canonique.}
+\text{mutualiser uniquement par classe de même paire orientée.}
 }
 ```
 
@@ -322,6 +322,43 @@ littéraux orientés `(a,b)`, elles peuvent partager le même certificat auxilia
 associé à cette paire. En revanche, il ne faut pas contracter transitivement des
 auxiliaires qui partagent seulement une variable ou des paires différentes. Cela
 introduirait une contrainte logique absente de la formule originale.
+
+La version conservative actuellement utilisée dans les prototypes
+`SpectralHigherOrder` et `MCMCHigherOrder` choisit une seule paire canonique par
+clause ternaire : on trie les trois littéraux par indice de variable, puis on
+prend les deux premiers littéraux orientés. Deux clauses sont alors mutualisées
+uniquement si ce quadruplet
+
+```text
+(variable_a, signe_a, variable_b, signe_b)
+```
+
+est exactement identique.
+
+Cette règle évite bien la sur-contrainte transitive, mais elle peut manquer des
+mutualisations valides. Par exemple, les clauses
+
+```text
+(x1 ∨ x3 ∨ x4), (x2 ∨ x3 ∨ x4), (¬x1 ∨ x3 ∨ x4)
+```
+
+partagent toutes la paire orientée exacte `(x3,+),(x4,+)`, mais cette paire
+n'est pas la paire canonique de ces clauses.
+
+Une amélioration sûre consiste donc à choisir, pour chaque clause ternaire, une
+unique paire orientée parmi ses trois paires possibles, mais en privilégiant les
+paires réellement partagées :
+
+1. construire toutes les classes de paires orientées exactes ;
+2. pour chaque clause, sélectionner la classe qui maximise le nombre de clauses
+   couvertes, ou un score pondéré ;
+3. en cas d'égalité, utiliser la paire canonique comme règle déterministe ;
+4. garantir qu'une clause n'est affectée qu'à une seule classe auxiliaire.
+
+Cette variante reste non transitive : deux clauses ne partagent un auxiliaire
+que si elles sont affectées à la même paire orientée exacte. Elle augmente
+potentiellement la mutualisation sans fusionner des événements logiques
+différents.
 
 ---
 
@@ -420,8 +457,9 @@ Un programme linéaire naturel est :
 ```
 
 sous les contraintes précédentes. Le choix `alpha_t=1` maximise la masse totale
-transférée. On peut aussi choisir des poids différents pour favoriser certains
-triangles :
+transférée. C'est un objectif énergétique simple, mais pas nécessairement le
+meilleur objectif algorithmique pour la dynamique de clusters. On peut choisir
+des poids différents pour favoriser certains triangles :
 
 ```math
 \alpha_t
@@ -436,6 +474,36 @@ triangles :
 ```
 
 ou encore donner un bonus aux triangles issus directement des gadgets 3-SAT.
+
+Le document spectral met aussi en évidence l'utilité des degrés d'arêtes
+
+```math
+d_e=\rho_e+\sum_{t\supset e}\omega_t.
+```
+
+Ils peuvent servir à normaliser ou pondérer le transfert. Dans la voie MCMC, il
+faut toutefois rester prudent : une normalisation modifie l'objectif du LP, même
+si l'énergie finale reste évaluée sur le Hamiltonien non normalisé. Le bon usage
+est donc plutôt de choisir les coefficients `alpha_t` pour orienter le transfert
+vers des triangles utiles à la dynamique.
+
+En particulier, les triangles et arêtes incidentes au noeud de référence `T`
+doivent être traités séparément. Le noeud `T` est épinglé ; s'il percole trop
+vite, il absorbe les variables originales dans un cluster non flippable. Il est
+donc souvent préférable d'utiliser un coefficient réduit pour les triangles
+contenant `T` :
+
+```math
+\alpha_t \leftarrow \lambda_T\alpha_t,
+\qquad 0\le \lambda_T\le 1,
+\qquad T\in t,
+```
+
+ou même d'interdire temporairement ces triangles dans le LP de transfert lors
+des phases de diversification. Cette pénalisation ne supprime pas les contraintes
+vers `T` : elles restent présentes comme résidus ou comme termes du score SAT.
+Elle évite seulement de transformer le champ de référence en gigantesque cluster
+épinglé.
 
 Le signe global d'un triangle est :
 
@@ -537,6 +605,33 @@ Il en résulte :
 
 C'est précisément cette structure que la dynamique Swendsen-Wang triangulaire
 doit exploiter.
+
+La contrainte triangulaire n'est qu'une contrainte d'intégrabilité locale. Un
+coloriage arbitraire des arêtes par `y_e` provient de spins de sommets seulement
+si, pour tout cycle `C`,
+
+```math
+\prod_{e\in C} y_e
+=
+\prod_{e\in C}\varepsilon_e.
+```
+
+Les triangles imposent cette condition sur les cycles de longueur trois, mais un
+graphe SAT creux contient aussi des cycles plus longs. Pour la voie MCMC, cette
+observation sert surtout de diagnostic :
+
+- un gel triangulaire qui respecte les parités locales peut malgré tout produire
+  des clusters peu utiles si les cycles longs restent contradictoires ;
+- les résidus `rho_e` ne doivent jamais être ignorés, car ils portent souvent
+  l'information des contraintes qui ne participent pas aux triangles ;
+- les statistiques de défauts d'arêtes `q_e` par triangle donnent un indicateur
+  plus fin que la seule taille des clusters.
+
+On peut suivre par exemple la fraction de triangles non frustrés ayant `0`, `2`
+ou `3` arêtes insatisfaites, et la fraction de triangles frustrés ayant `1` ou
+`3` arêtes insatisfaites. Une bonne configuration locale doit concentrer la
+masse sur `0` pour les triangles non frustrés et sur `1` pour les triangles
+frustrés.
 
 ---
 
@@ -1105,6 +1200,45 @@ Pour l'optimisation, une politique naturelle est :
 - intensification : essayer ponctuellement des `q_star` plus grands, mais
   seulement avec une résolution réduite robuste sur les flips.
 
+### 10.3 Diagnostics issus de l'espace des arêtes
+
+Le document `SpectralHigherOrder` rappelle que les variables naturelles des
+triangles sont les défauts d'arêtes
+
+```math
+q_e=\frac{1-y_e}{2}.
+```
+
+Même si l'algorithme MCMC reste dans l'espace discret des spins, ces variables
+donnent de bons diagnostics de calibration. En plus de `S_max` et `S_T`, il faut
+suivre :
+
+1. la masse transférée totale `sum_t 3 omega_t` et la masse résiduelle
+   `sum_e rho_e` ;
+2. la fraction de cette masse portée par des triangles contenant `T` ;
+3. la distribution locale de `sum_{e in partial t} q_e` séparément pour les
+   triangles frustrés et non frustrés ;
+4. le degré d'arête
+
+```math
+d_e=\rho_e+\sum_{t\supset e}\omega_t;
+```
+
+5. la part des arêtes de grand degré qui sont incidentes à `T`.
+
+Ces quantités indiquent si le transfert LP construit des motifs higher-order
+utiles ou s'il concentre la masse sur le champ de référence. Un symptôme
+problématique est :
+
+```text
+S_T élevé, S_max faible, et forte masse transférée sur des triangles contenant T.
+```
+
+Dans ce cas, augmenter `beta` ne résout pas le problème : cela renforce surtout
+le cluster épinglé. Il faut plutôt réduire le gel incident à `T`, pénaliser les
+triangles contenant `T` dans le LP, ou exclure ces triangles pendant les phases de
+diversification.
+
 ---
 
 ## 11. Algorithme recommandé
@@ -1127,8 +1261,10 @@ L'algorithme complet est le suivant.
 3. Encoder les clauses unitaires par des arêtes vers `T`.
 4. Encoder les clauses binaires par les trois arêtes signées exactes.
 5. Encoder les clauses ternaires avec les auxiliaires et les dix arêtes signées.
-6. Mutualiser seulement les auxiliaires qui partagent la même paire orientée
-   canonique.
+6. Mutualiser les auxiliaires par classe de même paire orientée exacte.
+   La version conservative prend la paire canonique; une version plus agressive
+   mais encore sûre choisit pour chaque clause sa meilleure paire partagée, sans
+   affecter une clause à plusieurs certificats.
 
 ### 11.3 Compensation et transfert
 
@@ -1136,7 +1272,12 @@ L'algorithme complet est le suivant.
 2. Remplacer par une unique arête de signe `epsilon_e` et poids `W_e`, ou
    supprimer l'arête si `K_e=0`.
 3. Énumérer les triangles admissibles.
-4. Résoudre le LP :
+4. Fixer les coefficients `alpha_t`, en distinguant au minimum :
+   - triangles frustrés ;
+   - triangles non frustrés ;
+   - triangles contenant `T` ;
+   - triangles issus directement des gadgets 3-SAT.
+5. Résoudre le LP :
 
 ```math
 \max_{\omega\ge 0}\sum_t\alpha_t\omega_t
@@ -1146,11 +1287,14 @@ L'algorithme complet est le suivant.
 \sum_{t\supset e}\omega_t\le W_e.
 ```
 
-5. Calculer les résidus :
+6. Calculer les résidus :
 
 ```math
 \rho_e=W_e-\sum_{t\supset e}\omega_t.
 ```
+
+7. Reporter les diagnostics `masse transférée`, `masse résiduelle`,
+   `masse contenant T`, et les degrés d'arêtes `d_e`.
 
 ### 11.4 Initialisation des spins
 
@@ -1170,16 +1314,17 @@ L'algorithme complet est le suivant.
 3. tirer les gels triangulaires non frustrés et frustrés ;
 4. construire les clusters par union-find ;
 5. identifier le cluster `K_T` contenant `T` ;
-6. construire le problème réduit sur les flips des clusters flippables ;
-7. résoudre ce problème réduit :
+6. mesurer `S_max`, `S_T` et les défauts triangulaires `q_e` ;
+7. construire le problème réduit sur les flips des clusters flippables ;
+8. résoudre ce problème réduit :
    - énumération exacte si le nombre de clusters est petit ;
    - sinon WalkSAT réduit sur clusters ;
    - éventuellement MILP/MaxSAT ponctuellement pour intensification ;
-8. appliquer le meilleur vecteur de flips trouvé, avec `z_{K_T}=+1` ;
-9. réoptimiser les auxiliaires localement ;
-10. évaluer le vrai score SAT ;
-11. mettre à jour la meilleure configuration globale si le score s'améliore ;
-12. redémarrer ou réchauffer si aucune amélioration n'apparaît pendant trop
+9. appliquer le meilleur vecteur de flips trouvé, avec `z_{K_T}=+1` ;
+10. réoptimiser les auxiliaires localement ;
+11. évaluer le vrai score SAT ;
+12. mettre à jour la meilleure configuration globale si le score s'améliore ;
+13. redémarrer ou réchauffer si aucune amélioration n'apparaît pendant trop
     longtemps.
 
 ### 11.6 Pseudocode
@@ -1190,7 +1335,15 @@ output: best assignment found
 
 G_ext = build_extended_signed_graph(F, T, auxiliaries)
 G = compensate_signed_edges(G_ext)
-Triangles, omega, rho = solve_triangle_transfer_lp(G)
+Triangles = enumerate_triangles(G)
+alpha = choose_triangle_transfer_weights(
+    Triangles,
+    bonus_frustrated = alpha_frust,
+    bonus_gadget = alpha_gadget,
+    penalty_contains_T = lambda_T
+)
+omega, rho = solve_triangle_transfer_lp(G, Triangles, alpha)
+diagnostics = edge_space_diagnostics(G, Triangles, omega, rho, T)
 
 sigma = initialize_original_spins()
 sigma[T] = +1
@@ -1203,26 +1356,30 @@ beta = calibrate_beta_for_target_cluster_size(
     sigma, Triangles, omega, rho, target=0.10
 )
 observed_cluster_sizes = []
+observed_pinned_sizes = []
+observed_triangle_defects = []
 
 for sweep in 1..S:
     frozen_edges = []
 
     for residual edge e=(i,j):
         if epsilon[e] * sigma[i] * sigma[j] == +1:
-            if rand() < 1 - exp(-beta * rho[e]):
+            beta_eff = beta * beta_T_factor if T in e else beta
+            if rand() < 1 - exp(-beta_eff * rho[e]):
                 frozen_edges.append(e)
 
     for triangle t:
         y = [epsilon[e] * sigma[i_e] * sigma[j_e] for e in boundary(t)]
+        beta_eff = beta * beta_T_factor if T in t else beta
 
         if product_sign(t) == +1:
             if y == [+1,+1,+1]:
-                if rand() < 1 - exp(-2 * beta * omega[t]):
+                if rand() < 1 - exp(-2 * beta_eff * omega[t]):
                     frozen_edges.extend(boundary(t))
 
         else:
             if exactly two entries of y are +1:
-                if rand() < 1 - exp(-2 * beta * omega[t]):
+                if rand() < 1 - exp(-2 * beta_eff * omega[t]):
                     e = choose_one_satisfied_edge_uniformly(boundary(t), y)
                     frozen_edges.append(e)
 
@@ -1231,10 +1388,23 @@ for sweep in 1..S:
     observed_cluster_sizes.append(
         get_largest_flippable_cluster_proportion(clusters, pinned, V_orig)
     )
+    observed_pinned_sizes.append(
+        get_pinned_cluster_proportion(clusters, pinned, V_orig)
+    )
+    observed_triangle_defects.append(
+        get_triangle_defect_histogram(sigma, Triangles)
+    )
 
     if sweep % adaptation_period == 0:
-        beta = update_beta(beta, observed_cluster_sizes, target=0.10)
+        beta = update_beta(
+            beta,
+            observed_cluster_sizes,
+            observed_pinned_sizes,
+            target=0.10
+        )
         observed_cluster_sizes = []
+        observed_pinned_sizes = []
+        observed_triangle_defects = []
 
     reduced = build_reduced_MaxSAT_on_cluster_flips(
         F, sigma, clusters, pinned
@@ -1287,12 +1457,43 @@ La voie MCMC higher-order évite cette rupture :
 2. les triangles frustrés sont traités comme frustrés, pas comme des triangles à
    satisfaire intégralement ;
 3. les arêtes résiduelles ne sont pas oubliées ;
-4. le cluster contenant `T` fixe la jauge ;
+4. le noeud `T` fixe la jauge, mais son cluster doit rester surveillé pour ne
+   pas absorber la mobilité ;
 5. le choix final des flips cible directement les clauses SAT originales.
 
 Le gel triangulaire n'est donc pas seulement une heuristique géométrique : il
 sert à générer des voisinages dont la structure respecte les frustrations
 locales du Hamiltonien.
+
+Le document spectral reste toutefois utile pour la voie MCMC sur trois points.
+
+1. Il rappelle que les triangles imposent des contraintes de parité sur les
+   défauts d'arêtes :
+
+```math
+B_2^\top q \equiv b \pmod 2.
+```
+
+La dynamique MCMC doit donc être jugée non seulement par la taille des clusters,
+mais aussi par la qualité locale des motifs `q_e` qu'elle préserve ou corrige.
+
+2. Il introduit des confiances d'arêtes, par exemple
+
+```math
+c_e
+=
+\left(\rho_e+\sum_{t\supset e}\omega_t\right)
+\cdot \text{confiance locale}.
+```
+
+Dans MCMC, ces confiances peuvent guider les redémarrages, les perturbations ou
+la sélection de clauses dans le WalkSAT réduit.
+
+3. Il insiste sur la projection finale vers les spins. Même si MCMC reste déjà
+dans l'espace des spins, un redémarrage peut être construit à partir d'un
+coloriage d'arêtes robuste : trier les arêtes par confiance, propager les spins
+sur un arbre couvrant maximum, puis raffiner par WalkSAT. Cela donne une option
+de diversification moins aveugle qu'un redémarrage aléatoire.
 
 ---
 
@@ -1362,6 +1563,8 @@ Les objets principaux doivent être stockés en listes creuses :
 - liste des résidus `(i,j,epsilon,rho)` avec `rho > 0` ;
 - liste des triangles `(e1,e2,e3,omega,product_sign)` ;
 - incidence arête vers triangles pour le LP ;
+- degré d'arête `d_e = rho_e + sum_{t superset e} omega_t` ;
+- indicateur `contains_T` pour les arêtes et triangles incidents au noeud `T` ;
 - incidence variable vers clauses originales ;
 - incidence cluster vers clauses réduites.
 
@@ -1429,16 +1632,65 @@ Le WalkSAT réduit doit maintenir :
 Ainsi, le coût d'un flip candidat est proportionnel au nombre de clauses
 incidentes au cluster, pas au nombre total de clauses.
 
-### 15.6 Redémarrages
+### 15.6 Diagnostics edge-space
+
+Même si la dynamique travaille sur des spins de sommets, il faut maintenir des
+diagnostics en variables d'arêtes :
+
+```math
+y_e=\varepsilon_e\sigma_i\sigma_j,
+\qquad
+q_e=\frac{1-y_e}{2}.
+```
+
+Pour chaque sweep, on peut calculer :
+
+- histogramme de `sum q_e` sur les triangles non frustrés ;
+- histogramme de `sum q_e` sur les triangles frustrés ;
+- masse de résidus violés `sum_e rho_e q_e` ;
+- masse triangulaire violée `sum_t omega_t sum_{e in partial t} q_e` ;
+- part de ces masses portée par des arêtes ou triangles contenant `T`.
+
+Ces métriques permettent de distinguer deux situations qui se ressemblent si
+l'on regarde seulement le nombre de clauses insatisfaites :
+
+1. la configuration est mauvaise parce que les défauts locaux sont mal placés ;
+2. la configuration est localement cohérente, mais la dynamique manque de
+   mobilité globale à cause de `K_T` ou de cycles longs.
+
+Dans le second cas, augmenter l'intensification WalkSAT peut être moins efficace
+qu'un redémarrage guidé par les arêtes de faible confiance.
+
+### 15.7 Redémarrages
 
 Si aucune amélioration du meilleur score n'est observée pendant `R` sweeps :
 
 - diminuer temporairement `beta` pour casser les gros clusters ;
 - augmenter le bruit WalkSAT ;
 - repartir de `best_sigma` avec perturbation ;
-- ou redémarrer aléatoirement une fraction des variables non épinglées par `T`.
+- redémarrer aléatoirement une fraction des variables non épinglées par `T` ;
+- ou construire un redémarrage guidé par les arêtes.
 
 Les redémarrages doivent conserver `best_sigma`.
+
+Un redémarrage guidé par les arêtes peut reprendre l'idée de projection du
+document spectral :
+
+1. calculer une confiance `c_e` à partir de `d_e` et de la stabilité récente de
+   `y_e` ;
+2. trier les arêtes par confiance décroissante ;
+3. construire une forêt couvrante en évitant de connecter trop vite à `T` ;
+4. propager les spins avec la règle
+
+```math
+\sigma_j=\varepsilon_e y_e\sigma_i ;
+```
+
+5. compléter les composantes non atteintes aléatoirement ;
+6. réoptimiser les auxiliaires et lancer WalkSAT.
+
+Cette procédure reste heuristique, mais elle exploite l'information higher-order
+accumulée au lieu de repartir d'une configuration complètement aléatoire.
 
 ---
 
@@ -1454,8 +1706,9 @@ Les redémarrages doivent conserver `best_sigma`.
 
 3. **Cluster de `T` trop grand.**  
    Beaucoup de variables deviennent non flippables. Il faut réduire `beta`,
-   pénaliser les gels qui connectent trop vite à `T`, ou traiter `S_T` comme un
-   diagnostic séparé.
+   réduire `beta_T_factor`, pénaliser les triangles contenant `T` dans le LP,
+   ou exclure ces triangles pendant une phase de diversification. `S_T` doit
+   être suivi comme un diagnostic séparé de `S_max`.
 
 4. **Trop de clusters.**  
    Le gel est trop faible. Augmenter `beta` ou utiliser plus d'intensification
@@ -1475,6 +1728,18 @@ Les redémarrages doivent conserver `best_sigma`.
    Ce n'est pas un problème en soi, mais il faut toujours réoptimiser les
    auxiliaires après l'étape de flip, car ils ne sont pas des variables de sortie.
 
+8. **Forte masse triangulaire contenant `T`.**
+   Le LP a probablement transféré une partie importante du champ de référence
+   dans des triangles. La dynamique risque alors de fabriquer des clusters
+   épinglés plutôt que des voisinages flippables. Diminuer le coefficient
+   `alpha_t` des triangles contenant `T`, ou imposer un plafond de masse
+   transférée incidente à `T`.
+
+9. **Paires orientées partagées non canonique.**
+   La mutualisation conservative peut laisser trop d'auxiliaires si les clauses
+   partagent une paire orientée qui n'est pas la paire canonique choisie. Utiliser
+   la variante "meilleure paire partagée" décrite en section 2.4.
+
 ---
 
 ## 17. Paramètres recommandés
@@ -1482,13 +1747,21 @@ Les redémarrages doivent conserver `best_sigma`.
 Valeurs de départ raisonnables :
 
 - cible de plus grand cluster flippable : `q_star = 0.10` ;
+- plafond indicatif pour le cluster de `T` : `S_T <= 0.30` à `0.50` selon la
+  densité ;
+- facteur de gel incident à `T` : commencer avec `beta_T_factor = 0.05` à
+  `0.20`, et tester `0` pour diagnostiquer la percolation parasite ;
+- pénalité de transfert pour les triangles contenant `T` : commencer avec
+  `lambda_T = 0` à `0.25` ;
 - nombre d'échantillons pour calibrer `beta` : `R = 3` à `7` ;
 - seuil d'énumération exacte : `m <= 25` ou `m <= 30` ;
 - bruit WalkSAT réduit : entre `0.05` et `0.20` ;
 - budget WalkSAT réduit par sweep : proportionnel au nombre de clauses réduites
   violées, avec un minimum fixe ;
 - période d'adaptation de `beta` : toutes les `10` à `50` itérations ;
-- intensification MaxSAT/MILP : seulement lorsque le meilleur score stagne.
+- intensification MaxSAT/MILP : seulement lorsque le meilleur score stagne ;
+- activer la mutualisation "meilleure paire partagée" si le nombre d'auxiliaires
+  ternaires reste élevé.
 
 Ces paramètres doivent être considérés comme des points de départ. Le bon niveau
 de gel dépend fortement de la densité de la formule, du nombre d'auxiliaires, de
@@ -1506,8 +1779,10 @@ La chaîne complète est :
   -> gadgets auxiliaires exacts pour les clauses ternaires
   -> graphe signé étendu
   -> compensation des arêtes opposées
+  -> choix des coefficients de transfert alpha_t
   -> LP de transfert des poids vers triangles
   -> résidus d'arêtes
+  -> diagnostics edge-space (q_e, d_e, masse contenant T)
   -> gel Swendsen-Wang triangles + gel Swendsen-Wang edges
   -> clusters avec cluster(T) épinglé
   -> problème MaxSAT réduit sur flips de clusters
