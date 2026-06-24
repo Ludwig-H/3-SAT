@@ -1,6 +1,6 @@
 # Solveur Spectral Signé pour le Problème 3-SAT
 
-Ce dossier contient la formulation théorique et l'implémentation d'un solveur pour le problème 3-SAT basé sur le **clustering spectral signé** hybride.
+Ce dossier contient la formulation théorique et l'implémentation d'un solveur pour le problème 3-SAT basé sur le **clustering spectral signé**.
 
 Contrairement aux approches hybrides standard, l'idée ici est d'**éliminer totalement la partie orientée**. Grâce à l'introduction systématique de variables auxiliaires et à leur couplage rigoureux, le problème combinatoire 3-SAT est encodé sous forme d'un **graphe pondéré signé quadratique** sur l'ensemble des variables d'origine, d'un spin de référence $T$ (fixé à $+1$) et de spins auxiliaires.
 
@@ -8,7 +8,7 @@ Contrairement aux approches hybrides standard, l'idée ici est d'**éliminer tot
 
 ## 1. Modélisation Mathématique de l'Encodage
 
-Soit une formule SAT contenant $N$ variables $x_1, \dots, x_N$ et un ensemble de clauses $\mathcal{C}$ de poids $u > 0$. Les variables de spins d'origine sont $\sigma_i \in \{-1, +1\}$. Le spin de référence est $T \in \{-1, +1\}$ (fixé à $+1$ après jauge).
+Soit une formule SAT contenant $N$ variables $x_1, \dots, x_N$ et un ensemble de clauses $\mathcal{C}$ de poids $u > 0$. Les variables de spins d'origine sont $\sigma_i \in \{-1, +1\}$. Le spin de référence $T \in \{-1, +1\}$ est fixé à $+1$.
 La valeur du littéral orienté est $L_i = \eta_i \sigma_i T$, où $\eta_i \in \{-1, +1\}$ est la polarité du littéral.
 
 L'énergie exacte d'insatisfaction vaut :
@@ -52,25 +52,29 @@ Au lieu d'ajouter des arêtes géantes, nous identifions les composantes connexe
 
 ---
 
-## 3. Le Laplacien Signé Normalisé
+## 3. Le Laplacien Signé Combinatoire et Normalisé
 
 Toutes les contributions d'arêtes sont sommées algébriquement pour former la matrice d'adjacence signée $A$ ($A_{ij} = \sum \operatorname{sign}(e) \cdot \operatorname{weight}(e)$).
 
-Pour éliminer le biais induit par les différences de degré entre les variables (très connectées dans les grands benchmarks) et les variables auxiliaires (faiblement connectées), nous utilisons le **Laplacien Signé Normalisé** :
+Soit $D_{ii} = \sum_j |A_{ij}|$ la matrice de degrés signée et $L = D - A$ le Laplacien signé.
+
+### A. Laplacien Signé Combinatoire (Par défaut)
+La résolution utilise par défaut le Laplacien signé combinatoire unitaire :
+$$L_{\text{comb}} = D - A$$
+On cherche le vecteur propre $v_{\text{min}}$ de la plus petite valeur propre de $L_{\text{comb}}$.
+
+### B. Laplacien Signé Normalisé (Optionnel)
+Pour compenser les différences de degré entre les variables et les nœuds auxiliaires, l'option `normalize=True` est fournie :
 $$L_{\text{norm}} = D^{-1/2} L D^{-1/2}$$
-où $D_{ii} = \sum_j |A_{ij}|$ et $L = D - A$.
+Le vecteur propre résolu $u_{\text{min}}$ est converti par $v_{\text{min}} = D^{-1/2} u_{\text{min}}$.
 
-Nous calculons le premier vecteur propre $u_{\text{min}}$ de $L_{\text{norm}}$, puis nous le transformons pour obtenir le vecteur propre de jauge :
-$$v_{\text{min}} = D^{-1/2} u_{\text{min}}$$
-
-La configuration de spin estimée est alors alignée par rapport au nœud $T$ (indexé à $0$) :
+La configuration de spin estimée est obtenue en alignant le signe par rapport à $T$ (indexé à $0$) :
 $$\sigma_i = \operatorname{sign}(v_{\text{min}}[i]) \cdot \operatorname{sign}(v_{\text{min}}[0])$$
 
 ---
 
-## 4. Phase de Recherche Locale Hybride (Warm-Start)
+## 4. Phase de Recherche Locale WalkSAT (Optionnelle, désactivée par défaut)
 
-Bien que la relaxation spectrale continue fournisse une excellente structure globale, sa projection discrète ($\operatorname{sign}$) laisse quelques clauses insatisfaites.
+Dans la phase actuelle de test, la recherche locale WalkSAT (post-processing / hybridation) est **désactivée par défaut** (`run_local_search=False`) afin d'étudier la performance brute de la réduction spectrale.
 
-Nous utilisons la solution spectrale comme **warm-start** pour une recherche locale légère (WalkSAT). Nos tests montrent que :
-* WalkSAT trouve une solution satisfaisante (SAT) en **10x à 20x moins de flips** à partir de la solution spectrale normalisée qu'à partir d'une configuration aléatoire.
+Lorsqu'elle est activée, elle utilise la solution spectrale comme **warm-start** pour guider WalkSAT. Sur les instances satisfaisables, cela réduit le nombre de flips requis pour converger vers une solution SAT d'un facteur 10x à 20x par rapport à une initialisation aléatoire.
