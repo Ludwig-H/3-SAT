@@ -1202,34 +1202,39 @@ best_score = SAT_unsat_count(F, sigma)
 beta = calibrate_beta_for_target_cluster_size(
     sigma, Triangles, omega, rho, target=0.10
 )
+observed_cluster_sizes = []
 
 for sweep in 1..S:
-    if sweep % adaptation_period == 0:
-        beta = update_beta(beta, observed_cluster_sizes, target=0.10)
-
     frozen_edges = []
 
     for residual edge e=(i,j):
         if epsilon[e] * sigma[i] * sigma[j] == +1:
-            freeze with probability 1 - exp(-beta * rho[e])
-            if frozen: frozen_edges.append(e)
+            if rand() < 1 - exp(-beta * rho[e]):
+                frozen_edges.append(e)
 
     for triangle t:
         y = [epsilon[e] * sigma[i_e] * sigma[j_e] for e in boundary(t)]
 
         if product_sign(t) == +1:
             if y == [+1,+1,+1]:
-                freeze all three triangle edges with probability
-                    1 - exp(-2 * beta * omega[t])
+                if rand() < 1 - exp(-2 * beta * omega[t]):
+                    frozen_edges.extend(boundary(t))
 
         else:
             if exactly two entries of y are +1:
-                with probability 1 - exp(-2 * beta * omega[t]):
-                    choose one satisfied edge uniformly
-                    freeze it
+                if rand() < 1 - exp(-2 * beta * omega[t]):
+                    e = choose_one_satisfied_edge_uniformly(boundary(t), y)
+                    frozen_edges.append(e)
 
     clusters = union_find(frozen_edges)
     pinned = cluster_containing(T)
+    observed_cluster_sizes.append(
+        get_largest_flippable_cluster_proportion(clusters, pinned, V_orig)
+    )
+
+    if sweep % adaptation_period == 0:
+        beta = update_beta(beta, observed_cluster_sizes, target=0.10)
+        observed_cluster_sizes = []
 
     reduced = build_reduced_MaxSAT_on_cluster_flips(
         F, sigma, clusters, pinned
@@ -1402,7 +1407,7 @@ variables de clusters. Exemple pour une clause ternaire :
 ```text
 for literal l=(eta, variable i):
     a = cluster[i]
-    required_value_for_violation[a] = - eta * sigma[i] * T
+    required_value_for_violation[a] = - eta * sigma[i] * sigma[T]
 ```
 
 Si le même cluster reçoit deux valeurs incompatibles, la clause est satisfaite
