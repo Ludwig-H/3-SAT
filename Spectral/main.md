@@ -37,18 +37,23 @@ Elle s'encode par **10 arêtes signées (chacune de poids $u/2$)** reliant les n
 
 ---
 
-## 2. Contraction des Nœuds Auxiliaires vs Grand Poids
+## 2. Contraction des Nœuds Auxiliaires et Évitement de la Sur-contrainte Transitive
 
-Dans la théorie initiale, si deux clauses ternaires $a$ et $b$ partagent une même paire orientée de littéraux, on cherche à forcer $s_a = s_b$ en reliant $s_a$ et $s_b$ par une arête ferromagnétique géante de poids $100\,000 \cdot u$.
+Dans la théorie initiale, si deux clauses ternaires $a$ et $b$ partagent une même paire orientée de littéraux, on cherche à forcer $s_a = s_b$ en les reliant par une arête ferromagnétique dure de poids géant ($100\,000 \cdot u$) ou en les contractant.
 
-**Problème (Localisation Spectrale)** : 
-Cette arête géante crée un déséquilibre de degré extrême. Les nœuds auxiliaires concernés acquièrent un degré disproportionné ($\approx 100\,000$). L'optimisation spectrale unitaire localise alors la totalité de la norme du vecteur propre $v_{\text{min}}$ sur ces nœuds auxiliaires, réduisant la magnitude sur les variables d'origine et le nœud de référence $T$ à des valeurs proches de zéro, bruitées et inexploitables.
+### A. Le Piège de la Sur-contrainte Transitive
+Si l'on contracte les variables auxiliaires dès qu'elles partagent **au moins une** paire orientée commune, on crée une sur-contrainte transitive destructrice :
+* Si la clause $i$ partage la paire $P_1$ avec la clause $j$ ($s_i \approx s_j$), et partage la paire $P_2$ avec la clause $k$ ($s_i \approx s_k$).
+* Cela force transitivement $s_j \approx s_k$, alors même que les clauses $j$ et $k$ ne partagent aucune paire.
+Comme chaque clause ternaire possède 3 paires, cette relation d'équivalence transitive va rapidement fusionner presque toutes les variables auxiliaires du graphe en un nombre très réduit de composants géants de valeurs identiques. Cela détruit le rôle de certificat local des variables auxiliaires et dégrade fortement la résolution.
 
-**Solution (Contraction de Nœuds)** :
-Au lieu d'ajouter des arêtes géantes, nous identifions les composantes connexes d'auxiliaires devant être égaux, et **nous les contractons (fusionnons) explicitement** en un seul nœud auxiliaire dans la matrice d'adjacence $A$. Cela :
-* Garantit l'égalité $s_a = s_b$ de façon exacte.
-* Évite d'introduire des poids démesurés dans la matrice.
-* Maintient des degrés homogènes sur le graphe.
+### B. La Solution : Contraction par Paire Canonique Unique
+Pour éliminer ce problème, nous définissons pour chaque clause ternaire une **paire canonique unique** (par exemple en triant les littéraux par index de variables et en sélectionnant les deux premiers). 
+
+Nous n'effectuons la contraction ($s_i \approx s_j$) **que si et seulement si** les clauses partagent la **même paire canonique unique**. Cela garantit :
+* Une affectation stricte et non ambiguë de chaque variable auxiliaire à un certificat de paire spécifique.
+* L'absence totale de liens transitifs indésirables entre des paires différentes.
+* Le maintien de la structure locale du problème combinatoire CNF.
 
 ---
 
