@@ -857,7 +857,37 @@ def solve_3sat_mcmc_higher_order(num_vars, clauses, max_sweeps=300, u_sat=1.0, b
     omega, rho, edges_list, edge_to_idx = transfer_weights_to_triangles(A, triangles, total_nodes)
     
     if verbose:
-        print(f"Found {len(triangles)} triangles.")
+        nf_count = 0
+        f_count = 0
+        nf_omega = 0.0
+        f_omega = 0.0
+        for t_idx, (u, v, w) in enumerate(triangles):
+            e1 = (u, v) if (u, v) in edge_to_idx else (v, u)
+            e2 = (v, w) if (v, w) in edge_to_idx else (w, v)
+            e3 = (u, w) if (u, w) in edge_to_idx else (w, u)
+            eps1 = np.sign(A[e1[0]][e1[1]])
+            eps2 = np.sign(A[e2[0]][e2[1]])
+            eps3 = np.sign(A[e3[0]][e3[1]])
+            p_t = eps1 * eps2 * eps3
+            if p_t == 1.0:
+                nf_count += 1
+                nf_omega += omega[t_idx]
+            else:
+                f_count += 1
+                f_omega += omega[t_idx]
+                
+        total_init_mass = np.sum(np.array([abs(A[u_n][v_n]) for u_n, v_n in edges_list])) if len(edges_list) > 0 else 0.0
+        total_transferred = 3.0 * np.sum(omega)
+        total_residual = np.sum(rho)
+        pct_transferred = (total_transferred / total_init_mass * 100) if total_init_mass > 1e-9 else 0.0
+        pct_residual = (total_residual / total_init_mass * 100) if total_init_mass > 1e-9 else 0.0
+        
+        print(f"Found {len(triangles)} triangles in the extended signed graph.")
+        print(f"  - Non-frustrated (NF) triangles: {nf_count} | Transferred weight sum: {nf_omega:.4f} (actual edge energy = {3*nf_omega:.4f})")
+        print(f"  - Frustrated (F) triangles: {f_count} | Transferred weight sum: {f_omega:.4f} (actual edge energy = {3*f_omega:.4f})")
+        print(f"  - Total initial edge mass: {total_init_mass:.4f}")
+        print(f"  - Total energy transferred to triangles: {total_transferred:.4f} ({pct_transferred:.2f}%)")
+        print(f"  - Total residual edge energy: {total_residual:.4f} ({pct_residual:.2f}%)")
         print(f"LP Transfer: mass on triangles = {np.sum(omega):.4f} | residual edge mass = {np.sum(rho):.4f}")
         
     # Precompute edge signs and triangle properties to avoid overhead in the sweep loop
