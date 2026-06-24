@@ -83,8 +83,27 @@ Cet algorithme itératif est spécialement conçu pour trouver les plus petites 
 
 ---
 
-## 4. Phase de Recherche Locale WalkSAT (Optionnelle, désactivée par défaut)
+## 4. Décimation Spectrale Successive par Simplification de Formule (Option 2)
+
+Plutôt que d'effectuer une projection globale unique de toutes les variables à partir du vecteur propre $v$ (qui est sujet aux erreurs d'arrondi et aux faux minima locaux de la relaxation continue), nous implémentons un algorithme de **décimation spectrale successive**. 
+
+### A. Le Principe de Décimation
+À chaque itération :
+1. Nous résolvons la relaxation spectrale sur les variables encore actives.
+2. Nous mesurons la **confiance spectrale** de chaque variable active, définie par sa valeur absolue dans le vecteur propre aligné : $c_i = |v_i|$. Une grande valeur absolue indique que la relaxation est très confiante dans le signe attribué.
+3. Nous sélectionnons une fraction (par exemple $10\%$) des variables actives les plus confiantes et fixons leur valeur définitivement selon $\sigma_i = \text{sign}(v_i)$.
+4. Nous simplifions la formule CNF et reconstruisons le graphe signé réduit.
+5. Nous répétons le processus jusqu'à ce que toutes les variables soient fixées.
+
+### B. Pourquoi la Simplification CNF (Option 2) surpasse la Contraction Directe (Option 1)
+* **Élimination des nœuds fantômes** : Si une clause ternaire est résolue par la fixation d'une variable, son spin auxiliaire $s_a$ est complètement retiré. Dans l'Option 1 (contraction de graphe), $s_a$ resterait sous forme de nœud fantôme et continuerait à coupler et biaiser les variables non fixées dans l'espace continu $\mathbb{R}^N$.
+* **Réduction dynamique de la dimension** : Lorsque des variables sont fixées, les clauses ternaires (3-SAT) se simplifient en clauses binaires (2-SAT) ou unitaires (1-SAT). Comme les clauses binaires s'encodent sans variables auxiliaires, l'élimination des $s_a$ accélère exponentiellement la résolution des étapes suivantes en réduisant la taille du Laplacien.
+
+---
+
+## 5. Phase de Recherche Locale WalkSAT (Optionnelle, désactivée par défaut)
 
 Dans la phase actuelle de test, la recherche locale WalkSAT (post-processing / hybridation) est **désactivée par défaut** (`run_local_search=False`) afin d'étudier la performance brute de la réduction spectrale.
 
 Lorsqu'elle est activée, elle utilise la solution spectrale comme **warm-start** pour guider WalkSAT. Sur les instances satisfaisables, cela réduit le nombre de flips requis pour converger vers une solution SAT d'un facteur 10x à 20x par rapport à une initialisation aléatoire.
+
