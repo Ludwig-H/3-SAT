@@ -19,13 +19,13 @@ La chaîne proposée est la suivante :
 5. Ajouter un terme triangulaire de type Hodge/parité qui encode la cohérence
    locale des triangles.
 6. Calculer robustement une prédiction `y_e`.
-7. Projeter `y_e` vers des spins de sommets `sigma_i` par synchronisation signee
+7. Projeter `y_e` vers des spins de sommets `sigma_i` par synchronisation signée
    `Z_2`, puis évaluer la vraie énergie SAT.
 
 Le point important est que l'objet spectral higher-order ne remplace pas
 l'exactitude combinatoire du problème SAT. Il fournit une relaxation plus riche
 que le Laplacien signé de sommets, parce qu'elle agit directement sur les
-arêtes satisfaites/insatisfaites, c'est-a-dire sur les objets que la dynamique
+arêtes satisfaites/insatisfaites, c'est-à-dire sur les objets que la dynamique
 triangulaire MCMC manipule.
 
 ---
@@ -412,7 +412,7 @@ spectral : elles doivent d'abord s'annuler algébriquement.
 
 ---
 
-## 6. Transfert optimise des arêtes vers les triangles
+## 6. Transfert optimisé des arêtes vers les triangles
 
 On cherche ensuite à transférer une partie des poids `W_e` vers des triangles,
 comme dans la dynamique MCMC triangulaire.
@@ -817,8 +817,8 @@ et
 \min_{p\in[0,1]^{|E|}} H_{\mathrm{EO}}(p).
 ```
 
-Cette formulation est un programme quadratique convexe si `kappa>=0` et
-`Lambda` est positive. Elle peut être résolue par QP, par gradient projeté, ou
+Cette formulation est un programme quadratique convexe si $\kappa \ge 0$ et
+$\Lambda$ est semi-définie positive. Elle peut être résolue par QP, par gradient projeté, ou
 par une version spectrale augmentée.
 
 ---
@@ -931,7 +931,7 @@ R_y=+1,
 
 où `L_EO` contient :
 
-1. les couplages triangulaires edge-edge,
+1. les couplages triangulaires arête-arête,
 2. le terme Hodge,
 3. les champs résiduels vers le noeud de référence.
 
@@ -1354,7 +1354,7 @@ L'encodage par graphe signé étendu est exact pour la minimisation après
 
 Le transfert vers triangles conserve l'énergie si les résidus sont conservés.
 
-La relaxation Hodge/parité n'est pas une preuve de satisfaisabilité. C'est une
+La relaxation de Hodge/parité n'est pas une preuve de satisfaisabilité. C'est une
 régularisation algorithmique higher-order.
 
 ### 17.2 Triangles locaux versus cycles globaux
@@ -1438,7 +1438,7 @@ Les triangles MCMC deviennent alors des contraintes naturelles de parité :
 B_2^\top p \equiv b \pmod 2.
 ```
 
-La relaxation Hodge réelle
+La relaxation de Hodge réelle
 
 ```math
 (B_2^\top p-b)^\top\Lambda(B_2^\top p-b)
