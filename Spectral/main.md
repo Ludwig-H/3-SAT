@@ -52,24 +52,29 @@ Au lieu d'ajouter des arêtes géantes, nous identifions les composantes connexe
 
 ---
 
-## 3. Le Laplacien Signé Combinatoire et Normalisé
+## 3. Optimisation de la Résolution Spectrale : Calcul Ciblé ($k=1$)
 
-Toutes les contributions d'arêtes sont sommées algébriquement pour former la matrice d'adjacence signée $A$ ($A_{ij} = \sum \operatorname{sign}(e) \cdot \operatorname{weight}(e)$).
+Le calcul complet de tous les vecteurs propres d'une matrice $N \times N$ est une opération très lourde ($\mathcal{O}(N^3)$). Or, le problème ne requiert que le vecteur propre correspondant à la plus petite valeur propre. Nous utilisons donc des algorithmes itératifs hautement optimisés pour cibler uniquement le premier vecteur propre ($k=1$).
 
-Soit $D_{ii} = \sum_j |A_{ij}|$ la matrice de degrés signée et $L = D - A$ le Laplacien signé.
+### A. Résolution sur CPU (SciPy Lanczos)
+Nous convertissons le Laplacien signé en une matrice creuse et utilisons le solveur de Lanczos de SciPy :
+```python
+scipy.sparse.linalg.eigsh(L, k=1, sigma=-1e-5, which='LM')
+```
+L'utilisation du mode *shift-invert* (`sigma=-1e-5`, `which='LM'`) permet de cibler directement et de manière très stable la valeur propre la plus proche de 0 (qui est la plus petite). Cette méthode s'exécute en temps quasi-linéaire sur des matrices creuses.
 
-### A. Laplacien Signé Combinatoire (Par défaut)
-La résolution utilise par défaut le Laplacien signé combinatoire unitaire :
-$$L_{\text{comb}} = D - A$$
-On cherche le vecteur propre $v_{\text{min}}$ de la plus petite valeur propre de $L_{\text{comb}}$.
+### B. Résolution sur GPU (PyTorch LOBPCG)
+Si un GPU est disponible, nous utilisons l'algorithme LOBPCG (Locally Optimal Block Preconditioned Conjugate Gradient) via PyTorch :
+```python
+torch.lobpcg(L_cuda, k=1, largest=False, X=X)
+```
+Cet algorithme itératif est spécialement conçu pour trouver les plus petites valeurs propres de grandes matrices symétriques sur GPU avec un coût mémoire et de calcul minimal.
 
-### B. Laplacien Signé Normalisé (Optionnel)
-Pour compenser les différences de degré entre les variables et les nœuds auxiliaires, l'option `normalize=True` est fournie :
-$$L_{\text{norm}} = D^{-1/2} L D^{-1/2}$$
-Le vecteur propre résolu $u_{\text{min}}$ est converti par $v_{\text{min}} = D^{-1/2} u_{\text{min}}$.
-
-La configuration de spin estimée est obtenue en alignant le signe par rapport à $T$ (indexé à $0$) :
-$$\sigma_i = \operatorname{sign}(v_{\text{min}}[i]) \cdot \operatorname{sign}(v_{\text{min}}[0])$$
+### C. Choix du Laplacien
+* **Laplacien Signé Combinatoire (Par défaut)** :
+  $$L_{\text{comb}} = D - A$$
+* **Laplacien Signé Normalisé (Optionnel)** :
+  $$L_{\text{norm}} = D^{-1/2} L D^{-1/2}$$
 
 ---
 
