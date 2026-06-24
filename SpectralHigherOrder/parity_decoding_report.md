@@ -281,7 +281,7 @@ insatisfaite. Un choix raisonnable est :
 où :
 
 1. `rho_e` est le résidu d'arête non transféré;
-2. `sum_{t superset e} omega_t` est la masse triangulaire qui utilise cette
+2. `sum_{t \supset e} omega_t` est la masse triangulaire qui utilise cette
    arête.
 
 Cette formulation corrige les deux défauts principaux :
@@ -502,7 +502,7 @@ Si le syndrome n'est pas satisfait, on peut :
 3. corriger les syndromes restants par flips locaux.
 
 Le coût de chaque itération est linéaire dans le nombre d'incidences
-triangle-arête, donc `O(3|T|)`.
+triangle-arête, donc `O(|T|)`.
 
 ---
 
@@ -570,7 +570,7 @@ E(y)
 \prod_{e\in\partial t}y_e-s_t
 \right)^2
 +
-\mu\sum_e(1-y_e^2)^2
+\gamma\sum_e(1-y_e^2)^2
 ```
 
 avec :
@@ -600,7 +600,7 @@ pousse les variables vers `-1` ou `+1`.
 Cette approche est non convexe, donc elle nécessite :
 
 1. plusieurs redémarrages;
-2. un recuit sur `mu`;
+2. un recuit sur `gamma`;
 3. une homotopie depuis une solution spectrale;
 4. une évaluation finale sur la vraie énergie SAT.
 
